@@ -1,1 +1,1 @@
--R /Users/bartj/CompCert-3.8 compcert -R /Users/bartj/CompCert-3.8/flocq Flocq
+-R /Users/bartj/CompCert-3.8 compcert -R /Users/bartj/CompCert-3.8/flocq Flocq -R /Users/bartj/ch2o/ch2o-8.11.2 ch2o
