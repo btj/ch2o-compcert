@@ -12,8 +12,13 @@ Inductive ch2o_final_state(Q: Z → Prop): state K → Prop :=
   Q z →
   ch2o_final_state Q (State [] (Return "main" (intV{sintT} z)) m).
 
-Definition ch2o_program_safe(Q: Z → Prop) :=
-  ∀ S,
-  Γ \ δ ⊢ₛ State [] (Call "main" []) ∅ ⇒* S →
-  ch2o_final_state Q S \/
-  ∃ S', Γ \ δ ⊢ₛ S ⇒ S'.
+Definition ch2o_safe_state(Q: Z → Prop)(S: state K): Prop :=
+  ∀ S',
+  Γ \ δ ⊢ₛ S ⇒* S' →
+  ch2o_final_state Q S' \/
+  ∃ S'', Γ \ δ ⊢ₛ S' ⇒ S''.
+
+Definition ch2o_safe_program(Q: Z → Prop) :=
+  ch2o_safe_state Q (State [] (Call "main" []) ∅).
+
+End Program.
