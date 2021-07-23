@@ -1,20 +1,12 @@
 From ch2o_compcert Require Export ch2o_safety compcertc_safety.
 From ch2o Require Export stringmap types expressions statements architectures state.
+(* We prove soundness for LP64 architectures. *)
+From ch2o_compcert Require Export ch2o_lp64.
 From compcert Require Export Csyntax Ctypes Globalenvs.
 
 Section Program.
 
 Local Open Scope string_scope.
-
-(* We prove soundness for LP64 architectures. *)
-
-Definition A: architecture := {|
-  arch_sizes := architectures.lp64;
-  arch_big_endian := false;
-  arch_char_signedness := integer_coding.Signed;
-  arch_alloc_can_fail := false
-|}.
-Notation K := (arch_rank A).
 
 Context (Γ: types.env K) (δ: funenv K) (p: Csyntax.program).
 
