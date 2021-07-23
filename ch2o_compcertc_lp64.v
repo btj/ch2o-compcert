@@ -18,7 +18,7 @@ Inductive expr_equiv: expressions.expr K → Csyntax.expr → Prop :=
 Inductive stmt_equiv: stmt K → statement → Prop :=
 | stmt_equiv_Return e ė:
   expr_equiv e ė →
-  stmt_equiv (SReturn e) (Sreturn (Some ė))
+  stmt_equiv (ret (cast{sintT%T} e)) (Sreturn (Some ė))
 .
 
 Inductive program_equiv: Prop :=
@@ -137,8 +137,19 @@ eapply rtc_l. {
 simpl.
 (* Starting executing ret *)
 eapply rtc_l. {
-  apply cstep_expr with (E:=CReturnE: statements.esctx_item K) (e:=(# intV{sintT} z: expressions.expr K)%E).
+  apply cstep_expr with (E:=CReturnE: statements.esctx_item K) (e:=(cast{sintT%T} (# intV{sintT} z): expressions.expr K)%E).
 }
+(* Evaluating the cast *)
+eapply rtc_l. {
+  apply cstep_expr_head with (E:=[]).
+  constructor.
+  destruct H2. constructor; assumption.
+}
+simpl.
+unfold int_cast.
+unfold arch_int_env.
+unfold int_pre_cast.
+simpl.
 (* Finishing executing ret *)
 eapply rtc_l. {
   constructor.
