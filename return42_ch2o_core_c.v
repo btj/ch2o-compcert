@@ -31,6 +31,11 @@ Proof.
 reflexivity.
 Qed.
 
+Lemma δ_main: δ !! ("main": funname) = Some (ret (cast{sintT%T} (# intV{sintT} 42)) : stmt K).
+Proof.
+reflexivity.
+Qed.
+
 Goal m0 = ∅.
 Proof.
 reflexivity.
