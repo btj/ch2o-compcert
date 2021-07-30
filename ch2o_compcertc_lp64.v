@@ -22,9 +22,9 @@ Inductive stmt_equiv: stmt K → statement → Prop :=
 .
 
 Inductive program_equiv: Prop :=
-| program_equiv_intro s ṡ m b:
+| program_equiv_intro s ṡ b:
   stringmap_lookup "main" δ = Some s →
-  Genv.init_mem p = Some m →
+  Genv.init_mem p <> None →
   let ge := globalenv p in
   Genv.find_symbol ge p.(prog_main) = Some b →
   let f := {|
@@ -45,6 +45,7 @@ Theorem soundness Q:
 Proof.
 intros Hequiv Hch2o.
 destruct Hequiv.
+case_eq (Genv.init_mem p); intros; try tauto. clear H0; rename H4 into H0.
 econstructor. { econstructor; try eassumption. reflexivity. }
 intro; intros.
 (* Callstate *)
