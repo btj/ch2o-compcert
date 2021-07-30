@@ -15,7 +15,7 @@ Inductive ch2o_final_state(Q: Z → Prop): state K → Prop :=
 Definition ch2o_safe_state(Q: Z → Prop)(S: state K): Prop :=
   ∀ S',
   Γ \ δ ⊢ₛ S ⇒* S' →
-  ch2o_final_state Q S' \/
+  ch2o_final_state Q S' ∨
   ∃ S'', Γ \ δ ⊢ₛ S' ⇒ S''.
 
 Definition ch2o_safe_program(Q: Z → Prop) :=
