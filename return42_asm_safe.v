@@ -1,4 +1,4 @@
-From ch2o_compcert Require Export return42_ch2o_safe return42_csyntaxgen_simplified ch2o_compcertc_lp64 compcertc_compiler.
+From ch2o_compcert Require Export return42_ch2o_safe return42_csyntaxgen ch2o_compcertc_lp64 compcertc_compiler.
 
 Lemma return42_compcertc_safe: compcertc_safe_program (λ z, z = 42) prog.
 Proof.
@@ -6,7 +6,7 @@ apply soundness with (2:=return42_ch2o_safe).
 econstructor.
 - apply δ_main.
 - apply init_mem_ok.
-  repeat constructor.
+  reflexivity.
 - reflexivity.
 - reflexivity.
 - constructor.

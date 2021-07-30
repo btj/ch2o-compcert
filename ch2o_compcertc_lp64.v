@@ -41,19 +41,19 @@ Inductive program_equiv: Prop :=
   stmt_equiv s ṡ →
   program_equiv.
 
-Fixpoint globdef_is_fun{F V}(g: AST.globdef F V): Prop :=
+Fixpoint globdef_is_fun{F V}(g: AST.globdef F V): bool :=
   match g with
-    AST.Gfun _ => True
-  | AST.Gvar _ => False
+    AST.Gfun _ => true
+  | AST.Gvar _ => false
   end.
 
 Lemma init_mem_ok `{prog: Ctypes.program F}:
-  Forall (λ gd, globdef_is_fun (gd.2)) (AST.prog_defs prog) →
+  forallb (λ gd, globdef_is_fun (gd.2)) (AST.prog_defs prog) = true →
   Genv.init_mem prog <> None.
 Proof.
 intros.
 unfold Genv.init_mem.
-assert (∀ gl ge m, (∀ g, In g gl → globdef_is_fun (snd g)) → Genv.alloc_globals (F:=Ctypes.fundef F) (V:=type) ge m gl <> None). {
+assert (∀ gl ge m, (∀ g, In g gl → globdef_is_fun (snd g) = true) → Genv.alloc_globals (F:=Ctypes.fundef F) (V:=type) ge m gl <> None). {
   induction gl; intros.
   - simpl. intro; discriminate.
   - simpl.
@@ -72,12 +72,12 @@ assert (∀ gl ge m, (∀ g, In g gl → globdef_is_fun (snd g)) → Genv.alloc_
         apply H0.
         right.
         assumption.
-    + elim (H0 (i, AST.Gvar v)).
-      left.
+    + lapply (H0 (i, AST.Gvar v)).
+      intros; discriminate. left.
       reflexivity.
 }
 apply H0.
-rewrite -> (List.Forall_forall (A:=AST.ident * AST.globdef (Ctypes.fundef F) type)) in H.
+rewrite -> (List.forallb_forall (A:=AST.ident * AST.globdef (Ctypes.fundef F) type)) in H.
 apply H.
 Qed.
 
