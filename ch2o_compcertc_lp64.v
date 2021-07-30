@@ -32,11 +32,54 @@ Inductive program_equiv: Prop :=
     fn_callconv:=AST.cc_default;
     fn_params:=nil;
     fn_vars:=nil;
-    fn_body:=ṡ
+    fn_body:=
+      Ssequence
+        ṡ
+        (Sreturn (Some (Eval (Vint (Int.repr 0)) (Tint I32 Signed noattr))))
   |} in
   Genv.find_funct_ptr ge b = Some (Internal f) →
   stmt_equiv s ṡ →
   program_equiv.
+
+Fixpoint globdef_is_fun{F V}(g: AST.globdef F V): Prop :=
+  match g with
+    AST.Gfun _ => True
+  | AST.Gvar _ => False
+  end.
+
+Lemma init_mem_ok `{prog: Ctypes.program F}:
+  Forall (λ gd, globdef_is_fun (gd.2)) (AST.prog_defs prog) →
+  Genv.init_mem prog <> None.
+Proof.
+intros.
+unfold Genv.init_mem.
+assert (∀ gl ge m, (∀ g, In g gl → globdef_is_fun (snd g)) → Genv.alloc_globals (F:=Ctypes.fundef F) (V:=type) ge m gl <> None). {
+  induction gl; intros.
+  - simpl. intro; discriminate.
+  - simpl.
+    unfold Genv.alloc_global.
+    destruct a.
+    destruct g.
+    + case_eq (Memory.Mem.alloc m 0 1).
+      intros.
+      destruct (Memory.Mem.range_perm_drop_2 m0 b 0 1 Memtype.Nonempty).
+      * unfold Memory.Mem.range_perm.
+        intros.
+        apply Memory.Mem.perm_alloc_2 with (1:=H1) (2:=H2).
+      * rewrite e.
+        apply IHgl.
+        intros.
+        apply H0.
+        right.
+        assumption.
+    + elim (H0 (i, AST.Gvar v)).
+      left.
+      reflexivity.
+}
+apply H0.
+rewrite -> (List.Forall_forall (A:=AST.ident * AST.globdef (Ctypes.fundef F) type)) in H.
+apply H.
+Qed.
 
 Theorem soundness Q:
   program_equiv →
@@ -66,7 +109,17 @@ inversion H5; clear H5; subst; inversion H4; clear H4; subst.
 clear H1 H2 H12 H14.
 inversion H13; clear H13; subst.
 simpl in H6.
-(* Executing the body *)
+(* Ssequence *)
+inversion H6 ; clear H6; subst. {
+  right.
+  eexists.
+  eexists.
+  right.
+  constructor.
+}
+inversion H1; clear H1; subst; inversion H4; clear H4; subst.
+rename H2 into H6.
+(* Executing the return statement *)
 inversion H3; clear H3; subst.
 inversion H6; clear H6; subst. {
   right.
