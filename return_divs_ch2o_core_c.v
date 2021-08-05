@@ -1,5 +1,5 @@
 From ch2o_compcert Require Export ch2o_lp64 return_divs_ch2o.
-From ch2o Require Import stringmap.
+From ch2o Require Import stringmap frontend_sound.
 
 Local Open Scope string_scope.
 
@@ -59,4 +59,23 @@ Qed.
 Goal S0 = State [] (Call "main" []) m0.
 Proof.
 reflexivity.
+Qed.
+
+Lemma alloc_program_eq: alloc_program decls empty = mret () alloc_program_result.
+Proof.
+reflexivity.
+Qed.
+
+Lemma Γ_valid: ✓ Γ.
+Proof.
+apply alloc_program_valid with (1:=alloc_program_eq).
+Qed.
+
+Lemma δ_valid: ✓{Γ,'{m0}} δ.
+Proof.
+apply alloc_program_valid with (1:=alloc_program_eq).
+Qed.
+
+Lemma m0_valid: ✓{Γ} m0.
+apply alloc_program_valid with (1:=alloc_program_eq).
 Qed.

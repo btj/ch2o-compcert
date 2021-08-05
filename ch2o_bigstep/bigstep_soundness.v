@@ -9,6 +9,17 @@ Section Soundness.
 
 Context {K} {HK: Env K} {HK': EnvSpec K} (Γ: env K) (δ: funenv K).
 
+Lemma sintT_union: (sintT ∪ sintT = sintT)%IT.
+Proof.
+assert (sintT%IT ∪ sintT%IT = IntType Signed (int_rank ∪ int_rank)). reflexivity.
+rewrite H.
+unfold union.
+unfold rank_union.
+rewrite decide_True.
+reflexivity.
+reflexivity.
+Qed.
+
 Lemma eval_sound st e z:
   eval st e z →
   (assert_stack st ⊆{Γ,δ} e ⇓ inr (intV{sintT} z))%A.
@@ -16,6 +27,12 @@ Proof.
 induction 1.
 - apply assert_int_typed_eval; assumption.
 - apply assert_stack_load with (1:=H).
+- eapply assert_eval_int_arithop'; try eassumption; try reflexivity.
+  + rewrite int_promote_int.
+    rewrite sintT_union.
+    reflexivity.
+  + simpl.
+    split; assumption.
 Qed.
 
 Definition R (st: store) (O: outcome): val K -> assert K :=

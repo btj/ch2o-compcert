@@ -8,6 +8,12 @@ Inductive eval `{Env K}: store -> expr K -> Z -> Prop :=
 | eval_load_var st i z:
   st !! i = Some (Some z) ->
   eval st (load (var i)) z
+| eval_div st e1 z1 e2 z2:
+  eval st e1 z1 →
+  eval st e2 z2 →
+  z2 ≠ 0 →
+  int_typed (z1 ÷ z2) sintT →
+  eval st (e1 / e2) (z1 ÷ z2)
 .
 
 Inductive outcome := onormal(s: store) | oreturn(z: Z).
