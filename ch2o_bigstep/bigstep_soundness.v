@@ -326,6 +326,66 @@ induction 1.
       -- reflexivity.
       -- apply int_cast_ok_self; assumption.
       -- apply int_cast_self; assumption.
+- eapply ax_stmt_weaken_post. 2:{ apply ax_skip. }
+  apply assert_exist_intro with (x:=st).
+  apply assert_Prop_r.
+  reflexivity.
+- eapply ax_if with
+    (P':=(λ ν, assert_stack st ★ ⌜ ν = inr (intV{sintT} z) ⌝)%A)
+    (P1:=(assert_stack st ★ ⌜ z ≠ 0%Z ⌝)%A)
+    (P2:=(assert_stack st ★ ⌜ z = 0%Z ⌝)%A).
+  + intros.
+    apply assert_Prop_intro_r; intros.
+    injection H1; clear H1; intros; subst.
+    eapply assert_exist_intro.
+    eapply transitivity.
+    apply assert_Prop_True.
+    apply assert_stack_typed.
+    apply assert_Prop_intro_l.
+    intros.
+    eapply assert_eval_int_unop'.
+    * apply assert_int_typed_eval.
+      eapply eval_typed; eassumption.
+    * reflexivity.
+    * constructor.
+    * reflexivity.
+  + intros.
+    rewrite <- assert_unlock_sep.
+    rewrite <- unlock_indep.
+    rewrite <- assert_stack_unlock_indep'.
+    apply assert_Prop_intro_r. intros.
+    injection H2; clear H2; intros; subst.
+    apply assert_Prop_r.
+    intro.
+    elim H1.
+    subst.
+    constructor.
+  + intros.
+    rewrite <- assert_unlock_sep.
+    rewrite <- unlock_indep.
+    rewrite <- assert_stack_unlock_indep'.
+    apply assert_Prop_intro_r. intros.
+    injection H2; clear H2; intros; subst.
+    apply assert_Prop_r.
+    inversion H1; clear H1; subst.
+    reflexivity.
+  + apply ax_expr_base with (ν:=inr (intV{sintT} z)).
+    apply assert_and_intro.
+    * apply assert_Prop_r.
+      reflexivity.
+    * apply eval_sound; assumption.
+  + rewrite (commutative (★))%A.
+    apply ax_stmt_Prop_pre; try (intros; apply assert_False_elim).
+    intros.
+    apply Z.eqb_neq in H1.
+    rewrite H1 in IHexec.
+    apply IHexec.
+  + rewrite (commutative (★))%A.
+    apply ax_stmt_Prop_pre; try (intros; apply assert_False_elim).
+    intros.
+    subst.
+    rewrite Z.eqb_refl in IHexec.
+    apply IHexec.
 Qed.
 
 Require Export ch2o.core_c.restricted_smallstep.

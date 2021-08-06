@@ -16,26 +16,42 @@ Inductive eval `{Env K}: store -> expr K -> Z -> Prop :=
   eval st (e1 / e2) (z1 ÷ z2)
 .
 
+Lemma eval_typed `{Env K} st e z:
+  eval st e z →
+  store_typed st →
+  int_typed z sintT.
+Proof.
+induction 1; try tauto.
+- intros.
+  apply Forall_lookup_1 with (1:=H1) (2:=H0).
+Qed.
+
 Inductive outcome := onormal(s: store) | oreturn(z: Z).
 
-Inductive exec `{Env K}: store -> stmt K -> outcome -> Prop :=
+Inductive exec `{Env K}: store → stmt K → outcome → Prop :=
 | exec_local_normal st s mv st':
-  exec (None::st) s (onormal (mv::st')) ->
+  exec (None::st) s (onormal (mv::st')) →
   exec st (local{sintT%BT} s) (onormal st')
 | exec_local_return st s z:
-  exec (None::st) s (oreturn z) ->
+  exec (None::st) s (oreturn z) →
   exec st (local{sintT%BT} s) (oreturn z)
 | exec_assign st i e z:
-  i < length st ->
-  eval st e z ->
+  i < length st →
+  eval st e z →
   exec st (var i ::= cast{sintT%BT} e) (onormal (<[i:=Some z]>st))
 | exec_seq st s1 st' s2 O:
-  exec st s1 (onormal st') ->
-  exec st' s2 O ->
+  exec st s1 (onormal st') →
+  exec st' s2 O →
   exec st (s1 ;; s2) O
 | exec_ret st e z:
-  eval st e z ->
+  eval st e z →
   exec st (ret (cast{sintT%BT} e)) (oreturn z)
+| exec_skip st:
+  exec st skip (onormal st)
+| exec_if st e z s1 s2 O:
+  eval st e z →
+  exec st (if Z.eqb z 0 then s2 else s1) O →
+  exec st (if{e} s1 else s2) O
 .
 
 Lemma exec_onormal_length_st `{EnvSpec K} st s O:
@@ -55,4 +71,8 @@ induction 1; intros; try discriminate.
   apply insert_length.
 - rewrite IHexec2; [|assumption].
   apply IHexec1; reflexivity.
+- injection H1; clear H1; intros; subst.
+  reflexivity.
+- apply IHexec in H3.
+  congruence.
 Qed.

@@ -13,12 +13,50 @@ Definition var_points_to i mv: assert K :=
     var i ↦{false, perm_full} (# intV{sintT} z) : sintT%BT
   end.
 
+Lemma var_points_to_typed i mv:
+  var_points_to i mv ⊆{Γ,δ} (⌜ store_value_typed mv ⌝ ★ True)%A.
+Proof.
+destruct mv; simpl.
+- apply assert_singleton_int_typed.
+- rewrite assert_Prop_l.
+  + apply assert_True_intro.
+  + constructor.
+Qed.
+
 Fixpoint assert_stack (st: store): assert K :=
   match st with
     [] => emp
   | mv::st =>
     var_points_to 0 mv ★ assert_stack st ↑
   end.
+
+Lemma assert_stack_typed st:
+  assert_stack st ⊆{Γ,δ} (⌜ store_typed st ⌝ ★ True)%A.
+Proof.
+induction st.
+- rewrite assert_Prop_l.
+  + apply assert_True_intro.
+  + constructor.
+- simpl.
+  eapply transitivity.
+  + apply assert_sep_preserving.
+    apply var_points_to_typed.
+    rewrite IHst.
+    reflexivity.
+  + rewrite <- (associative (★)%A).
+    apply assert_Prop_intro_l.
+    intro.
+    rewrite assert_lift_sep.
+    rewrite stack_indep.
+    rewrite stack_indep.
+    rewrite (commutative (★)%A).
+    rewrite <- (associative (★)%A).
+    apply assert_Prop_intro_l.
+    intro.
+    rewrite assert_Prop_l.
+    * apply assert_True_intro.
+    * constructor; assumption.
+Qed.
 
 Lemma assert_stack_var st i:
   i < length st ->

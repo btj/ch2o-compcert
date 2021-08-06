@@ -23,9 +23,20 @@ Inductive expr_equiv: expressions.expr K → Csyntax.expr → Prop :=
 .
 
 Inductive stmt_equiv: stmt K → statement → Prop :=
-| stmt_equiv_Return e ė:
+| stmt_equiv_return e ė:
   expr_equiv e ė →
   stmt_equiv (ret (cast{sintT%T} e)) (Sreturn (Some ė))
+| stmt_equiv_skip:
+  stmt_equiv SSkip Sskip
+| stmt_equiv_sequence s1 ṡ1 s2 ṡ2:
+  stmt_equiv s1 ṡ1 →
+  stmt_equiv s2 ṡ2 →
+  stmt_equiv (SComp s1 s2) (Ssequence ṡ1 ṡ2)
+| stmt_equiv_if e ė s1 ṡ1 s2 ṡ2:
+  expr_equiv e ė →
+  stmt_equiv s1 ṡ1 →
+  stmt_equiv s2 ṡ2 →
+  stmt_equiv (SIf e s1 s2) (Sifthenelse ė ṡ1 ṡ2)
 .
 
 Inductive program_equiv: Prop :=
@@ -615,6 +626,77 @@ Qed.
 
 Lemma eval_soundness Q n e ė k ḳ m ṁ f:
   expr_equiv e ė →
+  ch2o_safe_state Γ δ Q (State k (Expr e) m) →
+  (∀ z n',
+   n' ≤ n →
+   int_typed z (sintT: int_type K) →
+   ch2o_safe_state Γ δ Q (State k (Expr (# intV{sintT} z)) m) →
+   compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) (Tint I32 Signed noattr)) ḳ empty_env ṁ)) →
+  compcertc_safe_state_n Q p n (ExprState f ė ḳ empty_env ṁ).
+Proof.
+revert e ė.
+apply well_founded_induction with (1:=lt_wf) (a:=n).
+clear n.
+intros n IH.
+intros.
+intros t s HstarN.
+inversion HstarN; subst.
+- (* refl *)
+  destruct (compcertc_expr_never_stuck f ė ḳ empty_env ṁ).
+  + destruct H2 as [v [ty H2]].
+    subst.
+    inversion H; clear H; subst.
+    unfold compcertc_safe_state_n in H1.
+    eapply H1 with (n':=0) (trace:=[]); try eauto.
+  + tauto.
+- case_eq (match ė with Eval _ _ => true | _ => false end); intros. {
+    inversion H; clear H; subst; try discriminate.
+    unfold compcertc_safe_state_n in H1.
+    eapply H1 with (n':=S n0) (4:=HstarN); try eauto.
+  }
+  destruct H2. 2:{
+    inversion H2; subst; discriminate.
+  }
+  inversion H2; clear H2; subst.
+  + (* step_lred *)
+    eapply expr_equiv_no_LV_context in H; [elim H; reflexivity | assumption].
+  + (* step_rred *)
+    edestruct (rred_safe _ _ H) as [E [e1 [e2 [He1 [He1e2 [Hee' Hṁ']]]]]]; try (eassumption || reflexivity).
+    unfold compcertc_safe_state_n in IH.
+    subst.
+    eapply IH with (2:=Hee') (5:=H3).
+    * lia.
+    * intro S'.
+      intro HS'.
+      apply H0.
+      eapply rtc_l; try eassumption.
+      assert (∀ e, cast{sintT%T} (subst E e) = subst (E ++ [CCast (sintT%T)]) e)%E. {
+        intros; rewrite subst_snoc.
+        reflexivity.
+      }
+      apply cstep_expr_head.
+      apply He1e2.
+    * intros z n' Hn'.
+      apply (H1 z n'); lia.
+  + (* step_call *)
+    apply expr_equiv_no_call with (2:=H12) (3:=H13) in H.
+    elim H; reflexivity.
+  + elim H13.
+    eapply expr_equiv_imm_safe with (1:=H) (2:=H12). { reflexivity. }
+    intros.
+    destruct (classic (Γ \ locals k ⊢ₕ safe e1, m)); try eassumption.
+    destruct (H0 (State k (Undef (UndefExpr E e1)) m)). {
+      eapply rtc_l; [|apply rtc_refl].
+      subst.
+      apply cstep_expr_undef; assumption.
+    }
+    * inversion H7.
+    * destruct H7 as [S'' H7].
+      inversion H7.
+Qed.
+
+Lemma eval_soundness' Q n e ė k ḳ m ṁ f:
+  expr_equiv e ė →
   ch2o_safe_state Γ δ Q (State k (Expr (cast{sintT%T} e)) m) →
   (∀ z n',
    n' ≤ n →
@@ -697,18 +779,224 @@ inversion HstarN; subst.
       inversion H7.
 Qed.
 
-(*
-
-Inductive state_equiv: state K → Csem.state → Prop :=
-| state_equiv_expr e ė e0 f m:
-  expr_equiv e ė →
-  state_equiv
-    (State [CExpr (cast{sintT%T} e0) (ret □); CParams "main" []] (Expr e) ∅)
-    (ExprState f ė
-       (Kreturn (Kseq (Sreturn (Some (Eval (Vint (Int.repr 0)) (Tint I32 Signed noattr)))) Kstop))
-       empty_env
-       m)
-*)
+Lemma stmt_soundness Q f s ṡ:
+  stmt_equiv s ṡ →
+  ∀ n k ḳ m ṁ,
+  ch2o_safe_state Γ δ Q (State k (Stmt ↘ s) m) →
+  (∀ n',
+   n' ≤ n →
+   ch2o_safe_state Γ δ Q (State k (Stmt ↗ s) m) →
+   compcertc_safe_state_n Q p n' (Csem.State f Sskip ḳ empty_env ṁ)) →
+  (∀ n' z ḳ',
+   n' ≤ n →
+   int_typed z (sintT: int_type K) →
+   call_cont ḳ' = call_cont ḳ →
+   ch2o_safe_state Γ δ Q (State k (Stmt (⇈ (intV{sintT} z)) s) m) →
+   compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') empty_env ṁ)) →
+  compcertc_safe_state_n Q p n (Csem.State f ṡ ḳ empty_env ṁ).
+Proof.
+(* TODO: When adding support for loops, we'll need to perform well-founded induction on n here as well. *)
+induction 1.
+- (* return *)
+  intros.
+  intro; intros.
+  inversion H3; clear H3; subst. {
+    right.
+    eexists; eexists.
+    right.
+    constructor.
+  }
+  inversion H4; clear H4; subst; inversion H3; clear H3; subst; try intuition discriminate.
+  eapply eval_soundness'; try eassumption. {
+    intro; intros.
+    eapply H0.
+    eapply rtc_l; [|eassumption].
+    apply cstep_expr with (E:=CReturnE).
+  }
+  intros.
+  eapply H2; try eassumption.
+  + lia.
+  + reflexivity.
+  + intro; intros.
+    eapply H6.
+    eapply rtc_l; [|eassumption].
+    rewrite <- mem_unlock_empty at 2.
+    constructor.
+- (* skip *)
+  intros.
+  eapply H0.
+  + reflexivity.
+  + intro; intros.
+    eapply H.
+    eapply rtc_l; [|eassumption].
+    constructor.
+- (* sequence *)
+  intros.
+  intro; intros.
+  inversion H4; clear H4; subst. {
+    right.
+    eexists; eexists.
+    right.
+    constructor.
+  }
+  inversion H5; clear H5; subst; inversion H4; clear H4; subst; try intuition discriminate.
+  eapply IHstmt_equiv1; try eassumption. {
+    intro; intros.
+    eapply H1.
+    eapply rtc_l; [|eassumption].
+    constructor.
+  } 2:{
+    intros.
+    simpl in H7.
+    eapply H3; try eassumption.
+    - lia.
+    - intro; intros.
+      eapply H8.
+      eapply rtc_l; [|eassumption].
+      constructor.
+  }
+  intros.
+  intro; intros.
+  inversion H7; clear H7; subst. {
+    right.
+    eexists; eexists.
+    right.
+    constructor.
+  }
+  inversion H8; clear H8; subst; inversion H7; clear H7; subst. 2:{
+    inversion H15.
+  }
+  eapply IHstmt_equiv2; try eassumption. {
+    intro; intros.
+    eapply H5.
+    eapply rtc_l; [|eassumption].
+    constructor.
+  } 2:{
+    intros.
+    intro; intros.
+    eapply H3; try eassumption.
+    + lia.
+    + intro; intros.
+      eapply H11.
+      eapply rtc_l; [|eassumption].
+      constructor.
+  }
+  intros.
+  eapply H2; try eassumption.
+  + lia.
+  + intro; intros.
+    eapply H8.
+    eapply rtc_l; [|eassumption].
+    constructor.
+- (* if *)
+  intros.
+  intro; intros.
+  inversion H5; clear H5; subst. {
+    right.
+    eexists; eexists.
+    right.
+    constructor.
+  }
+  inversion H6; clear H6; subst; inversion H5; clear H5; subst; try intuition discriminate.
+  eapply eval_soundness; try eassumption. {
+    intro; intros.
+    eapply H2.
+    eapply rtc_l; [|eassumption].
+    apply cstep_expr with (E:=CIfE s1 s2).
+  }
+  intros.
+  intro; intros.
+  inversion H9; clear H9; subst. {
+    right.
+    eexists; eexists.
+    right.
+    constructor.
+    unfold bool_val.
+    simpl.
+    reflexivity.
+  }
+  inversion H10; clear H10; subst; inversion H9; clear H9; subst. {
+    inversion H19; clear H19; subst; try discriminate.
+  } {
+    inversion H19; clear H19; subst; try discriminate.
+    subst.
+    inversion H18; clear H18; subst.
+  } {
+    inversion H19; clear H19; subst; try discriminate.
+    subst.
+    inversion H18; clear H18; subst.
+  } {
+    inversion H18; clear H18; subst; try discriminate.
+    subst.
+    elim H19; constructor.
+  }
+  unfold bool_val in H21.
+  simpl in H21.
+  injection H21; clear H21; intros; subst.
+  rewrite Int.eq_signed in H11.
+  rewrite Int.signed_repr in H11. 2:{
+    apply int_typed_limits; assumption.
+  }
+  rewrite Int.signed_zero in H11.
+  destruct (Coqlib.zeq z 0); simpl in H11.
+  + (* z = 0 *)
+    subst.
+    eapply IHstmt_equiv2; try eassumption. {
+      intro; intros.
+      eapply H8.
+      eapply rtc_l; [|eassumption].
+      constructor.
+      - simpl. constructor.
+      - constructor.
+    } 2:{
+      intros.
+      eapply H4; try eassumption.
+      - lia.
+      - intro; intros.
+        eapply H13.
+        eapply rtc_l; [|eassumption].
+        rewrite mem_unlock_empty.
+        constructor.
+    }
+    intros.
+    rewrite mem_unlock_empty in H10.
+    intro; intros.
+    eapply H3; try eassumption.
+    * lia.
+    * intro; intros.
+      eapply H10.
+      eapply rtc_l; [|eassumption].
+      constructor.
+  + (* z ≠ 0 *)
+    eapply IHstmt_equiv1; try eassumption. {
+      intro; intros.
+      eapply H8.
+      eapply rtc_l; [|eassumption].
+      constructor.
+      - constructor.
+      - intro.
+        elim n1.
+        inversion H10; clear H10; subst.
+        reflexivity.
+    } 2:{
+      intros.
+      eapply H4; try eassumption.
+      - lia.
+      - intro; intros.
+        eapply H13.
+        eapply rtc_l; [|eassumption].
+        rewrite mem_unlock_empty.
+        constructor.
+    }
+    intros.
+    rewrite mem_unlock_empty in H10.
+    eapply H3; try eassumption.
+    * lia.
+    * intro; intros.
+      eapply H10.
+      eapply rtc_l; [|eassumption].
+      constructor.
+Qed.
 
 Theorem soundness Q:
   program_equiv →
@@ -748,21 +1036,11 @@ inversion H6 ; clear H6; subst. {
 }
 inversion H1; clear H1; subst; inversion H4; clear H4; subst.
 rename H2 into H6.
-(* Executing the return statement *)
-inversion H3; clear H3; subst.
-inversion H6; clear H6; subst. {
-  right.
-  eexists.
-  eexists.
-  right.
-  constructor.
-}
-inversion H2; clear H2; subst; inversion H4; clear H4; subst.
-(* Returning *)
-eapply eval_soundness; try eassumption. {
+(* Executing the body *)
+eapply stmt_soundness; try eassumption. {
   intro; intros.
   destruct (Hch2o S'); try tauto.
-  apply rtc_transitive with (2:=H2).
+  apply rtc_transitive with (2:=H1).
   (* Showing a CH2O execution *)
   (* Calling main *)
   eapply rtc_l. {
@@ -772,54 +1050,69 @@ eapply eval_soundness; try eassumption. {
     - reflexivity.
   }
   simpl.
-  (* Starting executing ret *)
-  eapply rtc_l. {
-    apply cstep_expr with (E:=CReturnE: statements.esctx_item K) (e0:=(cast{sintT%T} e: expressions.expr K)%E).
+  apply rtc_refl.
+} {
+  intros.
+  destruct (H2 (State [] (Return "main" voidV) ∅)). {
+    eapply rtc_l; [|apply rtc_refl].
+    constructor.
   }
-  constructor.
+  - inversion H4.
+  - destruct H4 as [S'' H4].
+    inversion H4.
 }
 intros.
 intro; intros.
-inversion H6; clear H6; subst. {
+inversion H7; clear H7; subst. {
   right.
-  eexists.
-  eexists.
+  eexists; eexists.
   right.
   constructor.
-  - reflexivity.
+  - simpl.
+    apply sem_cast_int.
   - reflexivity.
 }
-inversion H7; clear H7; subst; inversion H6; clear H6; subst; try (inversion H16; clear H16; subst; try discriminate).
-{ subst; inversion H15. }
-{ subst; inversion H15. }
-{ inversion H15; clear H15; subst; try discriminate.
+inversion H8; clear H8; subst; inversion H7; clear H7; subst. {
+  inversion H17; clear H17; subst; try discriminate.
+} {
+  inversion H17; clear H17; subst; try discriminate.
   subst.
-  elim H16.
-  constructor. }
-(* Final state *)
-rewrite sem_cast_int in H8.
-inversion H8; clear H8; subst. 2:{
-  inversion H6; clear H6; subst; inversion H8.
+  inversion H16.
+} {
+  inversion H17; clear H17; subst; try discriminate.
+  subst.
+  inversion H16.
+} {
+  inversion H16; clear H16; subst; try discriminate.
+  subst.
+  elim H17.
+  constructor.
+}
+rewrite H4 in H9.
+simpl in H9.
+inversion H9; clear H9; subst. 2:{
+  inversion H7; clear H7; subst; inversion H9; clear H9; subst.
 }
 left.
+simpl in H17.
+rewrite sem_cast_int in H17.
+injection H17; clear H17; intros; subst.
 constructor.
-rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+rewrite Int.signed_repr. 2:{
+  apply int_typed_limits; assumption.
+}
 (* Proving Q z *)
 destruct (H5 (state.State [] (Return "main" (intV{sintT} z)) ∅)). 2:{
-  inversion H6; assumption.
+  inversion H7; assumption.
 } 2:{
-  destruct H6.
-  inversion H6.
+  destruct H7.
+  inversion H7.
 }
 (* Finishing executing ret *)
 eapply rtc_l. {
   constructor.
 }
-rewrite mem_unlock_empty.
-(* Returning from main *)
-eapply rtc_l. {
-  constructor.
-}
+simpl.
 apply rtc_refl.
 Qed.
 
