@@ -615,7 +615,7 @@ Lemma expr_equiv_no_call e ė θ:
   expr_equiv e ė θ →
   ∀ a m fd vargs ty K C,
   callred (globalenv p) a m fd vargs ty →
-  context K RV C →
+  context RV K C →
   ė ≠ C a.
 Proof.
 induction 1; intros.
@@ -631,10 +631,25 @@ induction 1; intros.
   + intro.
     injection H4; clear H4; intros; subst.
     apply IHexpr_equiv2 with (1:=H1) (2:=H3) (3:=eq_refl).
+- inversion H1; subst; try discriminate.
+  intro; subst.
+  inversion H0.
+- inversion H0; subst; try discriminate.
+  intro; subst.
+  inversion H.
+- inversion H1; subst; try discriminate.
+  + intro; subst.
+    inversion H0.
+  + intro.
+    injection H3; clear H3; intros; subst.
+    apply IHexpr_equiv with (1:=H0) (2:=H2) (3:=eq_refl).
+- inversion H0; subst; try discriminate.
+  intro; subst.
+  inversion H.
 Qed.
 
 Lemma expr_equiv_imm_safe_rred e ė:
-  expr_equiv e ė →
+  expr_equiv e ė θ →
   ∀ ρ m,
   (∀ (E: ectx K) e1, e = subst E e1 → is_redex e1 → Γ \ ρ ⊢ₕ safe e1, m) →
   (∃ v ty, ė = Eval v ty) ∨
