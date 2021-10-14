@@ -39,6 +39,10 @@ Inductive exec `{Env K}: store → stmt K → outcome → Prop :=
   i < length st →
   eval st e z →
   exec st (var i ::= cast{sintT%BT} e) (onormal (<[i:=Some z]>st))
+| exec_assign' st i e z:
+  i < length st →
+  eval st e z →
+  exec st (! (cast{voidT%T} (var i ::= e))) (onormal (<[i:=Some z]>st))
 | exec_seq st s1 st' s2 O:
   exec st s1 (onormal st') →
   exec st' s2 O →
@@ -66,7 +70,10 @@ induction 1; intros; try discriminate.
   intros.
   simpl in H3; injection H3; clear H3; intros; subst.
   congruence.
-- (* eval_assign *)
+- (* exec_assign *)
+  injection H3; clear H3; intros; subst.
+  apply insert_length.
+- (* exec_assign' *)
   injection H3; clear H3; intros; subst.
   apply insert_length.
 - rewrite IHexec2; [|assumption].
