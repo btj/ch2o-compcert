@@ -16,49 +16,51 @@ Notation tint := (Tint I32 Signed noattr).
 
 Inductive type_ := Int | Loc.
 
-Inductive expr_equiv(ê: list AST.ident): expressions.expr K → Csyntax.expr → type_ → Prop :=
+Context (ê: list AST.ident).
+
+Inductive expr_equiv: expressions.expr K → Csyntax.expr → type_ → Prop :=
 | expr_equiv_val_int z:
   int_typed z (sintT: int_type K) → (* TODO: Require the CH2O program to be well-typed instead? *)
-  expr_equiv ê (# intV{sintT} z) (Eval (Vint (Int.repr z)) tint) Int
+  expr_equiv (# intV{sintT} z) (Eval (Vint (Int.repr z)) tint) Int
 | expr_equiv_div e1 ė1 e2 ė2:
-  expr_equiv ê e1 ė1 Int →
-  expr_equiv ê e2 ė2 Int →
-  expr_equiv ê (e1 / e2) (Ebinop Odiv ė1 ė2 tint) Int
+  expr_equiv e1 ė1 Int →
+  expr_equiv e2 ė2 Int →
+  expr_equiv (e1 / e2) (Ebinop Odiv ė1 ė2 tint) Int
 | expr_equiv_var i x:
   ê !! i = Some x →
-  expr_equiv ê (var i) (Evar x tint) Loc
+  expr_equiv (var i) (Evar x tint) Loc
 | expr_equiv_loc b:
-  expr_equiv ê (%(Ptr (addr_top (Npos b) sintT))) (Eloc b Ptrofs.zero tint) Loc
+  expr_equiv (%(Ptr (addr_top (Npos b) sintT))) (Eloc b Ptrofs.zero tint) Loc
 | expr_equiv_load e ė:
-  expr_equiv ê e ė Loc →
-  expr_equiv ê (load e)%E (Evalof ė tint) Int
+  expr_equiv e ė Loc →
+  expr_equiv (load e)%E (Evalof ė tint) Int
 | expr_equiv_val_indet:
-  expr_equiv ê (# indetV sintT) (Eval Vundef tint) Int
+  expr_equiv (# indetV sintT) (Eval Vundef tint) Int
 .
 
-Inductive stmt_equiv(ê: list AST.ident): stmt K → statement → Prop :=
+Inductive stmt_equiv: stmt K → statement → Prop :=
 | stmt_equiv_return e ė:
-  expr_equiv ê e ė Int →
-  stmt_equiv ê (ret (cast{sintT%T} e)) (Sreturn (Some ė))
+  expr_equiv e ė Int →
+  stmt_equiv (ret (cast{sintT%T} e)) (Sreturn (Some ė))
 | stmt_equiv_skip:
-  stmt_equiv ê skip Sskip
+  stmt_equiv skip Sskip
 | stmt_equiv_sequence s1 ṡ1 s2 ṡ2:
-  stmt_equiv ê s1 ṡ1 →
-  stmt_equiv ê s2 ṡ2 →
-  stmt_equiv ê (s1 ;; s2) (Ssequence ṡ1 ṡ2)
+  stmt_equiv s1 ṡ1 →
+  stmt_equiv s2 ṡ2 →
+  stmt_equiv (s1 ;; s2) (Ssequence ṡ1 ṡ2)
 | stmt_equiv_if e ė s1 ṡ1 s2 ṡ2:
-  expr_equiv ê e ė Int →
-  stmt_equiv ê s1 ṡ1 →
-  stmt_equiv ê s2 ṡ2 →
-  stmt_equiv ê (if{e} s1 else s2) (Sifthenelse ė ṡ1 ṡ2)
+  expr_equiv e ė Int →
+  stmt_equiv s1 ṡ1 →
+  stmt_equiv s2 ṡ2 →
+  stmt_equiv (if{e} s1 else s2) (Sifthenelse ė ṡ1 ṡ2)
 | stmt_equiv_assign i x e ė:
   ê !! i = Some x →
-  expr_equiv ê e ė Int →
-  stmt_equiv ê (! (cast{voidT%T} (var i) ::= e)) (Sdo (Eassign (Evar x tint) ė tint))
+  expr_equiv e ė Int →
+  stmt_equiv (! (cast{voidT%T} (var i) ::= e)) (Sdo (Eassign (Evar x tint) ė tint))
 .
 
 Inductive program_equiv: Prop :=
-| program_equiv_intro ê s ṡ b:
+| program_equiv_intro s ṡ b:
   stringmap_lookup "main" δ = Some (Nat.iter (length ê) (λ s, local{sintT} s) s) →
   Genv.init_mem p <> None →
   let ge := globalenv p in
@@ -74,10 +76,10 @@ Inductive program_equiv: Prop :=
         (Sreturn (Some (Eval (Vint (Int.repr 0)) (Tint I32 Signed noattr))))
   |} in
   Genv.find_funct_ptr ge b = Some (Internal f) →
-  stmt_equiv ê s ṡ →
+  stmt_equiv s ṡ →
   program_equiv.
 
-Fixpoint globdef_is_fun{F V}(g: AST.globdef F V): bool :=
+Definition globdef_is_fun{F V}(g: AST.globdef F V): bool :=
   match g with
     AST.Gfun _ => true
   | AST.Gvar _ => false
@@ -228,13 +230,13 @@ simpl.
 reflexivity.
 Qed.
 
-Fixpoint ch2o_val_of(oz: option Z): val K :=
+Definition ch2o_val_of(oz: option Z): val K :=
   match oz with
     None => indetV sintT
   | Some z => intV{sintT} z
   end.
 
-Fixpoint compcert_val_of(oz: option Z): Values.val :=
+Definition compcert_val_of(oz: option Z): Values.val :=
   match oz with
     None => Vundef
   | Some z => Vint (Int.repr z)
@@ -281,8 +283,8 @@ Inductive lrred: Csem.env → kind → expr → Memory.mem → Events.trace → 
   lrred ẽ RV a ṁ t a' ṁ'
 .
 
-Lemma lrred_safe ê e ė θ:
-  expr_equiv ê e ė θ →
+Lemma lrred_safe e ė θ:
+  expr_equiv e ė θ →
   ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
   context K_ K_' C →
   ė = C a →
@@ -292,7 +294,7 @@ Lemma lrred_safe ê e ė θ:
   ∃ (E: ectx K) e1 e2,
   e = subst E e1 ∧
   Γ \ ρ ⊢ₕ e1, m ⇒ e2, m ∧
-  expr_equiv ê (subst E e2) (C a') θ ∧
+  expr_equiv (subst E e2) (C a') θ ∧
   ṁ' = ṁ.
 Proof.
 induction 1; intros.
@@ -609,11 +611,11 @@ induction 1; intros.
   inversion H1; clear H1; subst; inversion H; clear H; subst.
 Qed.
 
-Lemma expr_equiv_no_call e ė:
-  expr_equiv e ė →
-  ∀ a m fd vargs ty C,
+Lemma expr_equiv_no_call e ė θ:
+  expr_equiv e ė θ →
+  ∀ a m fd vargs ty K C,
   callred (globalenv p) a m fd vargs ty →
-  context RV RV C →
+  context K RV C →
   ė ≠ C a.
 Proof.
 induction 1; intros.
