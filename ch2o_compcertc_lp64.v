@@ -844,45 +844,33 @@ induction 1; intros.
 - apply imm_safe_val.
 Qed.
 
-Lemma expr_equiv_imm_safe e ė:
-  expr_equiv e ė →
-  ∀ K_ C a ρ m ẽ ṁ,
-  context K_ RV C →
+Lemma expr_equiv_subexpr_imm_safe:
+  ∀ K1 K2 C,
+  context K1 K2 C →
+  ∀ e ė θ,
+  expr_equiv e ė θ →
+  K2 = kind_of_type θ →
+  ∀ m ṁ ẽ ρ a,
+  mem_equiv m ṁ →
+  env_equiv ẽ ê ρ →
   ė = C a →
   (∀ (E: ectx K) e1, e = subst E e1 → is_redex e1 → Γ \ ρ ⊢ₕ safe e1, m) →
-  imm_safe (globalenv p) ẽ K_ a ṁ.
+  imm_safe (globalenv p) ẽ K1 a ṁ.
 Proof.
-induction 1; intros.
-- inversion H0; clear H0; subst; try discriminate.
-  subst.
-  constructor.
-- inversion H1; clear H1; subst; try discriminate.
-  + subst.
-    edestruct (expr_equiv_imm_safe_rred (e1 / e2) (Ebinop Odiv ė1 ė2 tint))%E. {
-      constructor; assumption.
-    } {
-      eassumption.
-    }
-    * destruct H1 as [? [? ?]]; discriminate.
-    * destruct (H1 ṁ) as [C [a [t [a' [HC [Hė Hrred]]]]]].
-      rewrite Hė.
-      eapply imm_safe_rred with (C:=C) (e0:=a); eassumption.
-  + injection H2; clear H2; intros; subst.
-    eapply IHexpr_equiv1; try eassumption.
-    * reflexivity.
-    * intros.
-      eapply H3 with (E:=E++[CBinOpL (ArithOp DivOp) e2]); try assumption.
-      rewrite subst_snoc.
-      simpl.
-      congruence.
-  + injection H2; clear H2; intros; subst.
-    eapply IHexpr_equiv2; try eassumption.
-    * reflexivity.
-    * intros.
-      eapply H3 with (E:=E++[CBinOpR (ArithOp DivOp) e1]); try assumption.
-      rewrite subst_snoc.
-      simpl.
-      congruence.
+  induction 1; intros; subst; try (eapply expr_equiv_imm_safe; eassumption);
+  inversion H0; clear H0; subst.
+  - eapply IHcontext; eauto.
+    intros; subst.
+    eapply H5 with (E0:=E++[CLoad]) (2:=H4).
+    rewrite subst_snoc; reflexivity.
+  - eapply IHcontext with (1:=H11); eauto.
+    intros; subst.
+    eapply H5 with (E0:=E++[CBinOpL (ArithOp DivOp) e0]) (2:=H4).
+    rewrite subst_snoc; reflexivity.
+  - eapply IHcontext with (1:=H12); eauto.
+    intros; subst.
+    eapply H5 with (E0:=E++[CBinOpR (ArithOp DivOp) e0]) (2:=H4).
+    rewrite subst_snoc; reflexivity.
 Qed.
 
 Lemma eval_soundness Q n e ė k ḳ m ṁ f:
