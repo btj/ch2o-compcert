@@ -274,6 +274,23 @@ Inductive env_equiv(ẽ: Csem.env): list AST.ident → list (index * types.type 
   env_equiv ẽ (x::ê) ((Npos b, sintT%T)::ρ)
 .
 
+Lemma env_equiv_lookup:
+  forall ẽ ê ρ,
+  env_equiv ẽ ê ρ →
+  forall i x,
+  ê !! i = Some x →
+  ∃ b, Maps.PTree.get x ẽ = Some (b, tint).
+Proof.
+  induction 1; intros.
+  - discriminate.
+  - destruct i.
+    + simpl in H1; injection H1; clear H1; intros; subst.
+      exists b.
+      assumption.
+    + simpl in H1.
+      apply IHenv_equiv with (1:=H1).
+Qed.
+
 Inductive lrred: Csem.env → kind → expr → Memory.mem → Events.trace → expr → Memory.mem → Prop :=
 | lrred_lred ẽ a ṁ a' ṁ':
   lred (globalenv p) ẽ a ṁ a' ṁ' →
@@ -648,52 +665,85 @@ induction 1; intros.
   inversion H.
 Qed.
 
-Lemma expr_equiv_imm_safe_rred e ė:
+Definition kind_of_type(θ: type_): kind :=
+  match θ with
+    Int => RV
+  | Loc => LV
+  end.
+
+Lemma expr_equiv_imm_safe e ė θ:
   expr_equiv e ė θ →
-  ∀ ρ m,
+  ∀ m ṁ ẽ ρ,
+  mem_equiv m ṁ →
+  env_equiv ẽ ê ρ →
   (∀ (E: ectx K) e1, e = subst E e1 → is_redex e1 → Γ \ ρ ⊢ₕ safe e1, m) →
-  (∃ v ty, ė = Eval v ty) ∨
-  ∀ ṁ,
-  ∃ C a t a',
-  context RV RV C ∧
-  ė = C a ∧ rred (globalenv p) a ṁ t a' ṁ.
+  imm_safe (globalenv p) ẽ (kind_of_type θ) ė ṁ.
 Proof.
 induction 1; intros.
-- left. eexists; eexists; reflexivity.
-- right.
-  intros.
-  destruct (IHexpr_equiv1 ρ m). {
+- apply imm_safe_val.
+- assert (imm_safe (globalenv p) ẽ RV ė1 ṁ). {
+    eapply IHexpr_equiv1; try eassumption.
     intros.
-    apply H1 with (2:=H3) (E:=(E++[CBinOpL (ArithOp DivOp) e2])).
+    subst.
+    apply (H3 (E++[CBinOpL (ArithOp DivOp) e2])); try assumption.
+    simpl.
     rewrite subst_snoc.
-    rewrite H2.
     reflexivity.
   }
-  + destruct (IHexpr_equiv2 ρ m). {
-      intros.
-      apply H1 with (2:=H4) (E:=(E++[CBinOpR (ArithOp DivOp) e1])).
+  inversion H4; clear H4; subst.
+  + assert (imm_safe (globalenv p) ẽ RV ė2 ṁ). {
+      eapply IHexpr_equiv2; try eassumption.
+      intros; subst.
+      apply (H3 (E++[CBinOpR (ArithOp DivOp) e1])); try assumption.
       rewrite subst_snoc.
-      rewrite H3.
       reflexivity.
     }
-    * destruct H2 as [v1 [ty1 ?]].
-      destruct H3 as [v2 [ty2 ?]].
-      subst.
-      inversion H; clear H; subst.
-      inversion H0; clear H0; subst.
-      eexists; eexists; eexists; eexists.
-      split. { apply ctx_top. }
-      split. { simpl; reflexivity. }
+    inversion H4; clear H4; subst.
+    * inversion H; clear H; subst. 2:{
+        inversion H0; clear H0; subst.
+        -- lapply (H3 [] _ eq_refl). 2:{
+             constructor.
+             constructor.
+             constructor.
+           }
+           intros.
+           inversion H; clear H; subst.
+           inversion H0; clear H0; subst.
+           inversion H12; clear H12; subst.
+        -- lapply (H3 [] _ eq_refl). 2:{
+             constructor.
+             constructor.
+             constructor.
+           }
+           intros.
+           inversion H; clear H; subst.
+           inversion H0; clear H0; subst.
+           inversion H11; clear H11; subst.
+      }
+      inversion H0; clear H0; subst. 2:{
+        lapply (H3 [] _ eq_refl). 2:{
+           constructor.
+           constructor.
+           constructor.
+         }
+         intros.
+         inversion H; clear H; subst.
+         inversion H0; clear H0; subst.
+         inversion H12; clear H12; subst.
+      }
+      eapply imm_safe_rred with (C:=λ x, x). 2:{
+        apply ctx_top.
+      }
       constructor.
       simpl.
       assert (Γ \ ρ ⊢ₕ safe (# intV{sintT} z / # intV{sintT} z0)%E, m). {
-        apply H1 with (E:=[]).
+        apply H3 with (E:=[]).
         - reflexivity.
         - constructor; constructor.
       }
       inversion H; clear H; subst.
       inversion H0; clear H0; subst.
-      inversion H11; clear H11; subst.
+      inversion H13; clear H13; subst.
       assert (z0 ≠ 0)%Z. { apply H. }
       assert (int_typed (z ÷ z0) (sintT%IT: int_type K)). { apply H0. }
       clear H H0.
@@ -727,7 +777,7 @@ induction 1; intros.
         destruct (Coqlib.zeq z (-2147483648)). {
           destruct (Coqlib.zeq z0 (-1)). {
             subst.
-            destruct H5.
+            destruct H7.
             rewrite int_upper_sintT in H0.
             discriminate.
           }
@@ -737,30 +787,61 @@ induction 1; intros.
       }
       rewrite H.
       reflexivity.
-    * destruct (H3 ṁ) as [C [a [t [a' [HC [Hė2 Hrred]]]]]].
-      subst.
-      exists (λ x, Ebinop Odiv ė1 (C x) tint).
-      eexists; eexists; eexists.
-      split. {
-        constructor.
-        assumption.
+    * eapply imm_safe_lred with (C:=λ x, Ebinop Odiv (Eval v ty) (C x) tint). 2:{
+        apply ctx_binop_right; assumption.
       }
-      split. {
-        reflexivity.
+      eassumption.
+    * eapply imm_safe_rred with (C:=λ x, Ebinop Odiv (Eval v ty) (C x) tint). 2:{
+        apply ctx_binop_right; assumption.
       }
-      eapply Hrred.
-  + destruct (H2 ṁ) as [C [a [t [a' [HC [Hė1 Hrred]]]]]].
-    subst.
-    exists (λ x, Ebinop Odiv (C x) ė2 tint).
-    eexists; eexists; eexists.
-    split. {
-      constructor.
-      assumption.
-    }
-    split. {
+      eassumption.
+    * eelim (expr_equiv_no_call _ _ _ H0); try eassumption.
       reflexivity.
+  + eapply imm_safe_lred with (C:=λ x, Ebinop Odiv (C x) ė2 tint). 2:{
+      apply ctx_binop_left; assumption.
     }
-    eapply Hrred.
+    eassumption.
+  + eapply imm_safe_rred with (C:=λ x, Ebinop Odiv (C x) ė2 tint). 2:{
+      apply ctx_binop_left; assumption.
+    }
+    eassumption.
+  + eelim (expr_equiv_no_call _ _ _ H); try eassumption.
+    reflexivity.
+- destruct (env_equiv_lookup _ _ _ H1 _ _ H).
+  eapply imm_safe_lred with (C:=λ x, x). 2:{ apply ctx_top. }
+  constructor.
+  eassumption.
+- apply imm_safe_loc.
+- assert (imm_safe (globalenv p) ẽ LV ė ṁ). {
+    eapply IHexpr_equiv; try eassumption.
+    intros; subst.
+    apply H2 with (E0:=E++[CLoad]); try assumption.
+    rewrite subst_snoc.
+    reflexivity.
+  }
+  inversion H3; clear H3; subst.
+  + inversion H; clear H; subst.
+    lapply (H2 [] _ eq_refl). 2:{ constructor. constructor. }
+    intros.
+    inversion H; clear H; subst.
+    inversion H3; clear H3; subst.
+    destruct (blocks_equiv _ _ H0 b). {
+      assert (forall {X} (x1 x2 x3 x4: X), x1 = x2 -> x3 = x4 -> x1 = x3 -> x2 = x4). {
+        intros; congruence.
+      }
+      lapply (H7 _ _ _ _ _ H5 H8); try reflexivity.
+      intros; congruence.
+    }
+    eapply imm_safe_rred with (C:=λ x, x). 2:{ apply ctx_top. }
+    constructor.
+    eapply deref_loc_value; try reflexivity.
+    apply H.
+  + eapply imm_safe_lred with (C:=λ x, Evalof (C x) tint). 2:{ constructor. assumption. }
+    eassumption.
+  + eapply imm_safe_rred with (C:=λ x, Evalof (C x) tint). 2:{ constructor. assumption. }
+    eassumption.
+  + eelim (expr_equiv_no_call _ _ _ H); eauto.
+- apply imm_safe_val.
 Qed.
 
 Lemma expr_equiv_imm_safe e ė:
