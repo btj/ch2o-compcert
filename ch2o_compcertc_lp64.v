@@ -873,15 +873,17 @@ Proof.
     rewrite subst_snoc; reflexivity.
 Qed.
 
-Lemma eval_soundness Q n e ė k ḳ m ṁ f:
-  expr_equiv e ė →
+Lemma eval_soundness Q n e ė θ k ḳ m ṁ ẽ f:
+  expr_equiv e ė θ →
+  mem_equiv m ṁ →
+  env_equiv ẽ ê (locals k) →
   ch2o_safe_state Γ δ Q (State k (Expr e) m) →
-  (∀ z n',
+  (∀ n' Ω ν v,
    n' ≤ n →
-   int_typed z (sintT: int_type K) →
-   ch2o_safe_state Γ δ Q (State k (Expr (# intV{sintT} z)) m) →
-   compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) (Tint I32 Signed noattr)) ḳ empty_env ṁ)) →
-  compcertc_safe_state_n Q p n (ExprState f ė ḳ empty_env ṁ).
+   ch2o_safe_state Γ δ Q (State k (Expr (%#{ Ω } ν)) m) →
+   expr_equiv (%#{ Ω } ν) v θ →
+   compcertc_safe_state_n Q p n' (ExprState f v ḳ ẽ ṁ)) →
+  compcertc_safe_state_n Q p n (ExprState f ė ḳ ẽ ṁ).
 Proof.
 revert e ė.
 apply well_founded_induction with (1:=lt_wf) (a:=n).
