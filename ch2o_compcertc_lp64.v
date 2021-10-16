@@ -303,6 +303,146 @@ Inductive lrred: Csem.env → kind → expr → Memory.mem → Events.trace → 
   lrred ẽ RV a ṁ t a' ṁ'
 .
 
+Lemma indexmap_merge_spec A B C (f: option A -> option B -> option C) (t1: indexmap A) (t2: indexmap B) i:
+  f None None = None →
+  merge f t1 t2 !! i = f (t1 !! i) (t2 !! i).
+Proof.
+  intros.
+  destruct t1.
+  destruct t2.
+  destruct i.
+  - simpl.
+    reflexivity.
+  - simpl.
+    destruct Nmap_pos.
+    destruct Nmap_pos0.
+    simpl.
+    unfold pmap.Pmerge.
+    simpl.
+    unfold lookup.
+    unfold pmap.Plookup.
+    simpl.
+    apply pmap.Pmerge_spec.
+    assumption.
+Qed.
+
+Lemma mem_unlock_all_lookup m b v:
+  m !!{Γ} addr_top (N.pos b) sintT = Some v →
+  mem_unlock_all m !!{Γ} addr_top (N.pos b) sintT = Some v.
+Proof.
+  destruct m as [m].
+  simpl.
+  unfold mem_lookup.
+  simpl.
+  unfold cmap_lookup.
+  rewrite option_guard_True. 2:{ constructor. simpl. lia. }
+  simpl.
+  intro.
+  unfold lookup in H.
+  case_eq (indexmap_lookup (N.pos b) m); intros; rewrite H0 in H. 2:{
+    discriminate.
+  }
+  destruct c; try discriminate.
+  simpl in H.
+  destruct (classic (ctree_Forall (λ γb : pbit K, Some Readable ⊆ pbit_kind γb) c)). 2:{
+    rewrite option_guard_False in H; try assumption; discriminate.
+  }
+  rewrite option_guard_True in H; try assumption.
+  injection H; clear H; intros; subst.
+  rewrite indexmap_merge_spec; try reflexivity.
+  rewrite lookup_omap.
+  unfold lookup.
+  rewrite H0.
+  simpl.
+  destruct (classic (natmap.of_bools (pbit_locked <$> ctree_flatten c) ≠ ∅)).
+  - rewrite option_guard_True; try assumption.
+    simpl.
+    rewrite option_guard_True. 2:{
+      rewrite ctree_flatten_merge.
+      apply Forall_zip_with_fst with (1:=H1).
+      apply Forall_forall.
+      intros.
+      destruct x; simpl; try assumption.
+      destruct x0; simpl.
+      simpl in H3.
+      destruct tagged_perm; try assumption.
+      destruct l; try assumption.
+      unfold perm_kind in H3.
+      elim H3.
+    }
+    f_equal.
+    clear H0 H1 H.
+    rewrite natmap.to_of_bools.
+    rewrite resize_all_alt. 2:{
+      unfold fmap.
+      rewrite fmap_length.
+      reflexivity.
+    }
+    apply ctree_ind_alt with (w:=c); intros.
+    + simpl.
+      f_equal.
+      f_equal.
+      induction xs.
+      * reflexivity.
+      * simpl.
+        unfold fmap in IHxs.
+        rewrite IHxs.
+        f_equal; try reflexivity.
+        destruct a.
+        simpl.
+        destruct tagged_perm; try reflexivity.
+        destruct l; reflexivity.
+    + simpl.
+      f_equal.
+      revert H.
+      induction ws; intros; try reflexivity.
+      simpl.
+      inversion H; subst.
+      f_equal.
+      * rewrite <- fmap_take.
+        rewrite take_app.
+        assumption.
+      * rewrite <- fmap_drop.
+        rewrite drop_app.
+        auto.
+    + simpl.
+      f_equal.
+      revert H; induction wxss; intros; simpl. reflexivity.
+      destruct a.
+      simpl.
+      inversion H; clear H; subst.
+      f_equal.
+      * rewrite <- fmap_take.
+        rewrite <- app_assoc.
+        rewrite take_app.
+        assumption.
+      * rewrite <- fmap_drop.
+        rewrite <- fmap_drop.
+        rewrite <- app_assoc.
+        rewrite drop_app.
+        rewrite drop_app.
+        auto.
+    + simpl.
+      f_equal.
+      rewrite <- fmap_take.
+      rewrite take_app.
+      assumption.
+    + simpl.
+      f_equal.
+      induction xs.
+      * reflexivity.
+      * simpl.
+        f_equal.
+        -- destruct a.
+           destruct tagged_perm; try reflexivity.
+           destruct l; reflexivity.
+        -- assumption.
+  - rewrite option_guard_False; try assumption.
+    simpl.
+    rewrite option_guard_True; try assumption.
+    reflexivity.
+Qed.
+
 Lemma lrred_safe e ė θ:
   expr_equiv e ė θ →
   ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
@@ -520,8 +660,12 @@ induction 1; intros.
     }
     assumption.
   + injection H2; clear H2; intros; subst.
-    destruct (IHexpr_equiv1 C0 K_ RV a ẽ ṁ t a' ṁ' ρ m H4) as [E [e5 [e6 [? [? ?]]]]]; try trivial.
-    exists (E ++ [CBinOpL (ArithOp DivOp) e2])%E; eexists; eexists.
+    destruct (IHexpr_equiv1 C0 K_ RV a ẽ ṁ t a' ṁ' ρ m H4) as [E [e5 [e6 [m' [? [? ?]]]]]]; try trivial. {
+      intros; subst.
+      apply Hsafe with (E0:=E++[CBinOpL (ArithOp DivOp) e2]) (2:=H2).
+      rewrite subst_snoc; reflexivity.
+    }
+    exists (E ++ [CBinOpL (ArithOp DivOp) e2])%E; eexists; eexists; eexists.
     rewrite subst_snoc.
     rewrite subst_snoc.
     simpl.
@@ -531,20 +675,26 @@ induction 1; intros.
     split. { constructor; tauto. }
     destruct H5; congruence.
   + injection H2; clear H2; intros; subst.
-    destruct (IHexpr_equiv2 C0 K_ RV a ẽ ṁ t a' ṁ' ρ m H4) as [E [e5 [e6 [? [? [? Hṁ']]]]]]; try trivial.
-    exists (E ++ [CBinOpR (ArithOp DivOp) e1])%E; eexists; eexists.
+    destruct (IHexpr_equiv2 C0 K_ RV a ẽ ṁ t a' ṁ' ρ m H4) as [E [e5 [e6 [m' [? [? [? Hṁ']]]]]]]; try trivial. {
+      intros; subst.
+      apply Hsafe with (E0:=E++[CBinOpR (ArithOp DivOp) e1]) (2:=H2).
+      rewrite subst_snoc; reflexivity.
+    }
+    exists (E ++ [CBinOpR (ArithOp DivOp) e1])%E; eexists; eexists; eexists.
     rewrite subst_snoc.
     rewrite subst_snoc.
     simpl.
     rewrite H1.
     split; try trivial.
     split. { apply H2. }
-    split. { constructor; assumption. }
-    assumption.
-- inversion H0; clear H0; subst; try discriminate.
+    split. { constructor; tauto. }
+    destruct H5; congruence.
+- (* var i *)
+  inversion H0; clear H0; subst; try discriminate.
   subst.
   inversion H2; clear H2; subst; inversion H0; clear H0; subst. 2:{
     apply False_ind.
+    clear Hsafe.
     revert H4 i H.
     induction 1; intros.
     - discriminate.
@@ -558,9 +708,11 @@ induction 1; intros.
   exists [].
   exists (var i)%E.
   exists (%(Ptr (addr_top (Npos b) sintT)))%E.
+  exists m.
   split. { reflexivity. }
   split. {
     constructor.
+    clear Hsafe.
     revert H4 i H.
     induction 1; intros.
     - discriminate.
@@ -576,11 +728,13 @@ induction 1; intros.
   split. {
     constructor.
   }
-  reflexivity.
-- inversion H; clear H; subst; try discriminate.
+  assumption.
+- (* loc *)
+  inversion H; clear H; subst; try discriminate.
   subst.
   inversion H1; clear H1; subst; inversion H; clear H; subst.
-- inversion H0; clear H0; subst; try discriminate.
+- (* load *)
+  inversion H0; clear H0; subst; try discriminate.
   + subst.
     inversion H2; clear H2; subst; inversion H0; clear H0; subst.
     inversion H; clear H; subst.
@@ -590,7 +744,13 @@ induction 1; intros.
     pose proof (blocks_equiv _ _ H3 b).
     inversion H; clear H; subst; try congruence.
     assert (v = compcert_val_of oz). congruence. subst.
-    exists []; eexists; eexists.
+    assert (Hsafe': Γ \ ρ ⊢ₕ safe (load (% Ptr (addr_top (N.pos b) sintT))), m). {
+      apply Hsafe with (E:=[]); try reflexivity.
+      repeat constructor.
+    }
+    inversion Hsafe'; clear Hsafe'; subst.
+    inversion H; clear H; subst.
+    exists []; eexists; eexists; exists m.
     split. { reflexivity. }
     split. {
       assert (m = mem_force Γ (addr_top (N.pos b) sintT) m). {
@@ -610,6 +770,7 @@ induction 1; intros.
       eassumption.
     }
     split. {
+      
       destruct oz; constructor.
       assumption.
     }
