@@ -873,49 +873,77 @@ Proof.
     rewrite subst_snoc; reflexivity.
 Qed.
 
-Lemma eval_soundness Q n e ė θ k ḳ m ṁ ẽ f:
-  expr_equiv e ė θ →
+Lemma eval_soundness Q n e ė k ḳ m ṁ ẽ f:
+  expr_equiv e ė Int →
   mem_equiv m ṁ →
   env_equiv ẽ ê (locals k) →
   ch2o_safe_state Γ δ Q (State k (Expr e) m) →
-  (∀ n' Ω ν v,
+  (∀ n',
    n' ≤ n →
+   ∀ Ω ν v,
    ch2o_safe_state Γ δ Q (State k (Expr (%#{ Ω } ν)) m) →
-   expr_equiv (%#{ Ω } ν) v θ →
+   expr_equiv (%#{ Ω } ν) v Int →
    compcertc_safe_state_n Q p n' (ExprState f v ḳ ẽ ṁ)) →
   compcertc_safe_state_n Q p n (ExprState f ė ḳ ẽ ṁ).
 Proof.
-revert e ė.
+revert e ė m ṁ.
 apply well_founded_induction with (1:=lt_wf) (a:=n).
 clear n.
 intros n IH.
-intros.
+intros e ė m ṁ ? Hmem_equiv Henv_equiv; intros.
 intros t s HstarN.
 inversion HstarN; subst.
 - (* refl *)
-  destruct (compcertc_expr_never_stuck f ė ḳ empty_env ṁ).
+  destruct (compcertc_expr_never_stuck f ė ḳ ẽ ṁ).
   + destruct H2 as [v [ty H2]].
     subst.
     inversion H; clear H; subst.
-    unfold compcertc_safe_state_n in H1.
-    eapply H1 with (n':=0) (trace:=[]); try eauto.
+    * unfold compcertc_safe_state_n in H1.
+      eapply H1 with (n':=0) (trace:=[]); try eauto.
+      constructor.
+      assumption.
+    * unfold compcertc_safe_state_n in H1.
+      eapply H1 with (n':=0) (trace:=[]); try eauto.
+      constructor.
   + tauto.
 - case_eq (match ė with Eval _ _ => true | _ => false end); intros. {
     inversion H; clear H; subst; try discriminate.
-    unfold compcertc_safe_state_n in H1.
-    eapply H1 with (n':=S n0) (4:=HstarN); try eauto.
+    - unfold compcertc_safe_state_n in H1.
+      eapply H1 with (n':=S n0) (4:=HstarN); try eauto.
+      constructor.
+      assumption.
+    - unfold compcertc_safe_state_n in H1.
+      eapply H1 with (n':=S n0) (4:=HstarN); try eauto.
+      constructor.
   }
   destruct H2. 2:{
     inversion H2; subst; discriminate.
   }
   inversion H2; clear H2; subst.
-  + (* step_lred *)
-    eapply expr_equiv_no_LV_context in H; [elim H; reflexivity | assumption].
-  + (* step_rred *)
-    edestruct (rred_safe _ _ H) as [E [e1 [e2 [He1 [He1e2 [Hee' Hṁ']]]]]]; try (eassumption || reflexivity).
+  + (* step_Lred *)
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [He1 [He1e2 [Hee' Hṁ']]]]]]; try (eassumption || reflexivity). {
+      apply lrred_lred.
+      eassumption.
+    }
     unfold compcertc_safe_state_n in IH.
     subst.
-    eapply IH with (2:=Hee') (5:=H3).
+    eapply IH with (2:=Hee') (7:=H3); try eassumption.
+    * lia.
+    * intro S'.
+      intro HS'.
+      apply H0.
+      eapply rtc_l; try eassumption.
+      apply cstep_expr_head.
+      apply He1e2.
+    * intros n' Hn'.
+      apply (H1 n'); lia.
+  + (* step_rred *)
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [He1 [He1e2 [Hee' Hṁ']]]]]]; try (eassumption || reflexivity). {
+      apply lrred_rred; eassumption.
+    }
+    unfold compcertc_safe_state_n in IH.
+    subst.
+    eapply IH with (2:=Hee') (7:=H3); try eassumption.
     * lia.
     * intro S'.
       intro HS'.
@@ -927,13 +955,13 @@ inversion HstarN; subst.
       }
       apply cstep_expr_head.
       apply He1e2.
-    * intros z n' Hn'.
-      apply (H1 z n'); lia.
+    * intros n' Hn'.
+      apply (H1 n'); lia.
   + (* step_call *)
     apply expr_equiv_no_call with (2:=H12) (3:=H13) in H.
     elim H; reflexivity.
-  + elim H13.
-    eapply expr_equiv_imm_safe with (1:=H) (2:=H12). { reflexivity. }
+  + elim H13; clear H13.
+    eapply expr_equiv_subexpr_imm_safe with (1:=H12) (2:=H); try (eassumption || reflexivity).
     intros.
     destruct (classic (Γ \ locals k ⊢ₕ safe e1, m)); try eassumption.
     destruct (H0 (State k (Undef (UndefExpr E e1)) m)). {
