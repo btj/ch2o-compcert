@@ -309,13 +309,14 @@ Lemma lrred_safe e ė θ:
   context K_ K_' C →
   ė = C a →
   lrred ẽ K_ a ṁ t a' ṁ' →
-  mem_equiv m ṁ →
+  mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê ρ →
-  ∃ (E: ectx K) e1 e2,
+  ∀(Hsafe: ∀ (E: ectx K) e1, e = subst E e1 → is_redex e1 → Γ \ ρ ⊢ₕ safe e1, m),
+  ∃ (E: ectx K) e1 e2 m',
   e = subst E e1 ∧
-  Γ \ ρ ⊢ₕ e1, m ⇒ e2, m ∧
+  Γ \ ρ ⊢ₕ e1, m ⇒ e2, m' ∧
   expr_equiv (subst E e2) (C a') θ ∧
-  ṁ' = ṁ.
+  mem_equiv (mem_unlock_all m') ṁ'.
 Proof.
 induction 1; intros.
 - inversion H0; clear H0; subst; try discriminate.
@@ -503,7 +504,7 @@ induction 1; intros.
     destruct H.
     subst.
     exists [].
-    eexists; eexists.
+    eexists; eexists; eexists.
     simpl; split; [reflexivity|].
     split. {
       constructor. constructor.
@@ -511,14 +512,13 @@ induction 1; intros.
       -- apply H.
     }
     split. {
-      rewrite (right_id_L _ (∪)).
       unfold Int.divs.
       rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
       rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
       constructor.
       assumption.
     }
-    reflexivity.
+    assumption.
   + injection H2; clear H2; intros; subst.
     destruct (IHexpr_equiv1 C0 K_ RV a ẽ ṁ t a' ṁ' ρ m H4) as [E [e5 [e6 [? [? ?]]]]]; try trivial.
     exists (E ++ [CBinOpL (ArithOp DivOp) e2])%E; eexists; eexists.
