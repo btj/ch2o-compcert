@@ -19,9 +19,9 @@ Inductive type_ := Int | Loc.
 Context (ê: list AST.ident).
 
 Inductive expr_equiv: expressions.expr K → Csyntax.expr → type_ → Prop :=
-| expr_equiv_val_int z:
+| expr_equiv_val_int Ω z:
   int_typed z (sintT: int_type K) → (* TODO: Require the CH2O program to be well-typed instead? *)
-  expr_equiv (# intV{sintT} z) (Eval (Vint (Int.repr z)) tint) Int
+  expr_equiv (#{Ω} intV{sintT} z) (Eval (Vint (Int.repr z)) tint) Int
 | expr_equiv_div e1 ė1 e2 ė2:
   expr_equiv e1 ė1 Int →
   expr_equiv e2 ė2 Int →
@@ -36,6 +36,10 @@ Inductive expr_equiv: expressions.expr K → Csyntax.expr → type_ → Prop :=
   expr_equiv (load e)%E (Evalof ė tint) Int
 | expr_equiv_val_indet:
   expr_equiv (# indetV sintT) (Eval Vundef tint) Int
+| expr_equiv_assign e1 ė1 e2 ė2:
+  expr_equiv e1 ė1 Loc →
+  expr_equiv e2 ė2 Int →
+  expr_equiv (e1 ::= e2) (Eassign ė1 ė2 tint) Int
 .
 
 Inductive stmt_equiv: stmt K → statement → Prop :=
@@ -53,10 +57,9 @@ Inductive stmt_equiv: stmt K → statement → Prop :=
   stmt_equiv s1 ṡ1 →
   stmt_equiv s2 ṡ2 →
   stmt_equiv (if{e} s1 else s2) (Sifthenelse ė ṡ1 ṡ2)
-| stmt_equiv_assign i x e ė:
-  ê !! i = Some x →
+| stmt_equiv_do e ė:
   expr_equiv e ė Int →
-  stmt_equiv (! (cast{voidT%T} (var i) ::= e)) (Sdo (Eassign (Evar x tint) ė tint))
+  stmt_equiv (! (cast{voidT%T} e)) (Sdo ė)
 .
 
 Inductive program_equiv: Prop :=
