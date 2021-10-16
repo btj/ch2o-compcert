@@ -443,6 +443,47 @@ Proof.
     reflexivity.
 Qed.
 
+Lemma mem_writable_unlock_all m b:
+  mem_writable Γ (addr_top (N.pos b) sintT) m →
+  mem_writable Γ (addr_top (N.pos b) sintT) (mem_unlock_all m).
+Proof.
+  unfold mem_writable.
+  intros.
+  destruct H as [w [Hw Hw']].
+  unfold mem_unlock_all.
+  unfold mem_unlock.
+  destruct (mem_locks m) as [Ω].
+  destruct m as [m].
+  simpl.
+  unfold cmap_lookup.
+  rewrite option_guard_True. 2:{ constructor. simpl. lia. }
+  simpl.
+  rewrite indexmap_merge_spec. 2:{ reflexivity. }
+  unfold lookup.
+  simpl in Hw.
+  unfold cmap_lookup in Hw.
+  rewrite option_guard_True in Hw. 2:{ constructor. simpl. lia. }
+  simpl in Hw.
+  unfold lookup in Hw.
+  case_eq (indexmap_lookup (N.pos b) m); intros; rewrite H in Hw. 2:{ discriminate. }
+  destruct c as [|w1 μ]; try discriminate.
+  simpl in Hw.
+  injection Hw; clear Hw; intros; subst.
+  case_eq (indexmap_lookup (N.pos b) Ω); intros.
+  - simpl.
+    eexists; split. reflexivity.
+    rewrite ctree_flatten_merge.
+    apply Forall_zip_with_fst with (1:=Hw').
+    apply Forall_forall; intros.
+    destruct x; simpl; try assumption.
+    destruct x0; try assumption.
+    destruct tagged_perm as [[]|[]]; try assumption.
+    elim H2.
+  - simpl.
+    eexists; split. reflexivity.
+    assumption.
+Qed.
+
 Lemma lrred_safe e ė θ:
   expr_equiv e ė θ →
   ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
@@ -798,7 +839,30 @@ induction 1; intros.
   subst.
   inversion H1; clear H1; subst; inversion H; clear H; subst.
 - (* assign *)
-  
+  inversion H1; clear H1; subst; try discriminate.
+  + subst.
+    inversion H3; clear H3; subst; inversion H1; clear H1; subst.
+    inversion H; clear H; subst.
+    inversion H0; clear H0; subst.
+    * rewrite sem_cast_int in H11.
+      injection H11; clear H11; subst.
+      inversion H12; clear H12; subst; try discriminate.
+      intros; subst.
+      simpl in H.
+      injection H; clear H; intros; subst.
+      lapply (Hsafe [] _ eq_refl). 2:{ repeat constructor. }
+      intros.
+      inversion H; clear H; subst.
+      inversion H3; clear H3; subst.
+      exists []; eexists; eexists; eexists.
+      split. { reflexivity. }
+      split. {
+        constructor; eassumption.
+      }
+      split. {
+        simpl.
+        destruct (blocks_equiv _ _ H4 b).
+        - Search mem_writable mem_unlock.
 Qed.
 
 Lemma expr_equiv_no_call e ė θ:
