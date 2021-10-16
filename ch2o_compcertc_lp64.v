@@ -770,26 +770,35 @@ induction 1; intros.
       eassumption.
     }
     split. {
-      
+      apply mem_unlock_all_lookup in H15.
+      rewrite H7 in H15.
+      injection H15; clear H15; intros; subst.
       destruct oz; constructor.
       assumption.
     }
-    reflexivity.
+    assumption.
   + injection H1; clear H1; intros; subst.
-    destruct (IHexpr_equiv _ _ _ _ _ _ _ _ _ _ _ H5 eq_refl H2 H3 H4) as [E [e1 [e2 [? [? [? ?]]]]]].
+    destruct (IHexpr_equiv _ _ _ _ _ _ _ _ _ _ _ H5 eq_refl H2 H3 H4) as [E [e1 [e2 [m' [? [? [? ?]]]]]]]. {
+      intros; subst.
+      apply Hsafe with (E0:=E++[CLoad]) (2:=H1).
+      rewrite subst_snoc; reflexivity.
+    }
     subst.
-    exists (E ++ [CLoad]); eexists; eexists.
-    rewrite ! subst_snoc.
+    exists (E ++ [CLoad]); eexists; eexists; eexists.
+    rewrite ! subst_snoc; simpl.
     split. { reflexivity. }
     split. { eassumption. }
     split. {
       simpl.
       constructor; assumption.
     }
-    reflexivity.
-- inversion H; clear H; subst; try discriminate.
+    assumption.
+- (* indetV *)
+  inversion H; clear H; subst; try discriminate.
   subst.
   inversion H1; clear H1; subst; inversion H; clear H; subst.
+- (* assign *)
+  
 Qed.
 
 Lemma expr_equiv_no_call e ė θ:
