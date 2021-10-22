@@ -550,151 +550,38 @@ Proof.
   - apply IHl.
 Qed.
 
-Lemma mem_unlock_mem_lock b m:
+Lemma mem_unlock_all_mem_lock b m:
   mem_unlock_all (mem_lock Γ (addr_top (N.pos b) sintT) m) = mem_unlock_all m.
 Proof.
-  unfold mem_unlock_all.
+  rewrite mem_unlock_all_spec'.
+  rewrite mem_unlock_all_spec'.
   destruct m as [m].
   simpl.
   f_equal.
   apply map_eq; intro i.
-  rewrite indexmap_merge_spec; try reflexivity.
-  rewrite indexmap_merge_spec; try reflexivity.
-  rewrite lookup_omap.
-  destruct (classic (i = N.pos b)).
-  - subst.
-    rewrite lookup_alter.
-    rewrite lookup_omap.
-    case_eq (m !! (N.pos b: index)); intros; simpl. 2:{ reflexivity. }
-    destruct c as [|w μ]; simpl; [reflexivity|].
-    destruct (classic (natmap.of_bools (pbit_locked <$> ctree_flatten (ctree_map pbit_lock w)) ≠ ∅)).
-    + rewrite option_guard_True with (1:=H0).
-      destruct (classic (natmap.of_bools (pbit_locked <$> ctree_flatten w) ≠ ∅)).
-      * rewrite option_guard_True with (1:=H1).
-        f_equal.
-        f_equal.
-        rewrite natmap.to_of_bools.
-        rewrite resize_all_alt. 2:{
-          rewrite fmap_length.
-          reflexivity.
-        }
-        rewrite natmap.to_of_bools.
-        rewrite resize_all_alt. 2:{
-          rewrite fmap_length.
-          reflexivity.
-        }
-        assert (Hzip: ∀ (xs: list (pbit K)),
-             zip_with pbit_unlock_if (pbit_lock <$> xs) (pbit_locked <$> pbit_lock <$> xs)
-             = zip_with pbit_unlock_if xs (pbit_locked <$> xs)). {
-          induction xs; try reflexivity.
-          simpl.
-          f_equal.
-          destruct a.
-          ++ destruct tagged_perm; [|reflexivity].
-             destruct l; reflexivity.
-          ++ assumption.
-        }
-        apply ctree_ind_alt with (w:=w); intros; simpl.
-        -- f_equal.
-           apply Hzip.
-        -- f_equal.
-           revert H2.
-           induction ws; [reflexivity|].
-           intros.
-           inversion H2; clear H2; subst.
-           simpl.
-           f_equal.
-           ++ rewrite <- fmap_take.
-              rewrite take_app.
-              rewrite <- fmap_take.
-              rewrite take_app.
-              assumption.
-           ++ rewrite <- fmap_drop.
-              rewrite drop_app.
-              rewrite <- fmap_drop.
-              rewrite drop_app.
-              auto.
-        -- f_equal.
-           revert H2.
-           induction wxss; [reflexivity|].
-           simpl; intros.
-           inversion H2; clear H2; subst.
-           destruct a as [w0 xs].
-           f_equal.
-           ++ rewrite <- fmap_take.
-              rewrite <- app_assoc.
-              rewrite take_app.
-              rewrite <- fmap_drop.
-              rewrite drop_app.
-              rewrite <- fmap_take.
-              rewrite take_app.
-              rewrite <- fmap_take.
-              rewrite <- app_assoc.
-              rewrite take_app.
-              rewrite <- fmap_drop.
-              rewrite drop_app.
-              rewrite <- fmap_take.
-              rewrite take_app.
-              simpl.
-              f_equal.
-              ** apply H5.
-              ** apply Hzip.
-           ++ rewrite <- fmap_drop.
-              rewrite <- app_assoc.
-              rewrite drop_app.
-              rewrite <- fmap_drop.
-              rewrite drop_app.
-              rewrite <- fmap_drop.
-              rewrite <- app_assoc.
-              rewrite drop_app.
-              rewrite <- fmap_drop.
-              rewrite drop_app.
-              auto.
-        -- f_equal.
-           ++ rewrite <- fmap_take.
-              rewrite take_app.
-              rewrite <- fmap_take.
-              rewrite take_app.
-              assumption.
-           ++ rewrite <- fmap_drop.
-              rewrite drop_app.
-              rewrite <- fmap_drop.
-              rewrite drop_app.
-              apply Hzip.
-        -- f_equal.
-           apply Hzip.
-      * rewrite option_guard_False with (1:=H1).
-        f_equal.
-        f_equal.
-        rewrite natmap.to_of_bools.
-        rewrite resize_all_alt. 2:{
-          rewrite fmap_length.
-          reflexivity.
-        }
-        Search ctree_merge ctree_map.
-        rewrite ctree_merge_map with (g:=λ b, pbit_unlock_if b (pbit_locked b)). 2:{
-          rewrite fmap_length.
-          reflexivity.
-        } 2:{
-          assert (Hzip_with_fmap: ∀ A B C (f: A -> B -> C) xs g, zip_with f xs (g <$> xs) = (λ b, f b (g b)) <$> xs). {
-            induction xs. { reflexivity. }
-            intros.
-            simpl.
-            f_equal; auto.
-          }
-          apply Hzip_with_fmap.
-        }
-        Search ctree_map.
-        rewrite <- ctree_map_compose.
-        Search natmap.of_bools.
-        apply ctree_map_id with (P:=λ b, negb (pbit_locked b)). 2:{
-          destruct (classic (natmap.of_bools (pbit_locked <$> ctree_flatten w) = ∅)). 2:{ tauto. }
-          clear H1.
-          Search Forall lookup.
-          apply Forall_lookup_2.
-          intros.
-          
-            
+  rewrite lookup_fmap.
+  rewrite lookup_fmap.
+  destruct (classic (i = N.pos b)). 2:{
+    rewrite lookup_alter_ne; congruence.
+  }
+  subst.
+  rewrite lookup_alter.
+  destruct (m !! (N.pos b: index)); try reflexivity.
+  simpl.
+  f_equal.
+  destruct c as [|ω μ]; try reflexivity.
+  simpl.
+  f_equal.
+  rewrite <- ctree_map_compose.
+  assert (pbit_unlock (K:=K) ∘ pbit_lock = pbit_unlock). {
+    apply functional_extensionality; intros.
+    destruct x.
+    destruct tagged_perm; try reflexivity.
+    destruct l; reflexivity.
+  }
+  congruence.
+Qed.
+
 Lemma lrred_safe e ė θ:
   expr_equiv e ė θ →
   ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
