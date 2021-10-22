@@ -484,6 +484,72 @@ Proof.
     assumption.
 Qed.
 
+Lemma mem_unlock_all_spec' (m: mem K):
+  mem_unlock_all m =
+    let (m) := m in
+    CMap $ cmap_elem_map (ctree_map pbit_unlock) <$> m.
+Proof.
+  destruct m as [m].
+  unfold mem_unlock_all.
+  simpl.
+  f_equal.
+  apply map_eq; intro i.
+  rewrite indexmap_merge_spec; try reflexivity.
+  rewrite lookup_fmap.
+  rewrite lookup_omap.
+  destruct (m !! i); try reflexivity.
+  destruct c as [|ω μ]; try reflexivity.
+  simpl.
+  destruct (classic (natmap.of_bools (pbit_locked <$> ctree_flatten ω) = ∅)). {
+    rewrite option_guard_False. 2:{
+      tauto.
+    }
+    f_equal.
+    f_equal.
+    Search ctree_map.
+    rewrite ctree_map_id with (P:=λ b, pbit_locked b = false).
+    - reflexivity.
+    - intros.
+      destruct x.
+      destruct tagged_perm; try reflexivity.
+      destruct l.
+      + discriminate.
+      + reflexivity.
+    - apply Forall_lookup_2; intros.
+      case_eq (pbit_locked x); intros; try trivial.
+      assert ((pbit_locked <$> ctree_flatten ω) !! i0 = Some true). {
+        rewrite list_lookup_fmap.
+        rewrite H0.
+        simpl.
+        congruence.
+      }
+      apply natmap.elem_of_of_bools in H2.
+      rewrite H in H2.
+      apply not_elem_of_empty in H2.
+      elim H2.
+  }
+  rewrite option_guard_True; try assumption.
+  f_equal.
+  f_equal.
+  rewrite natmap.to_of_bools.
+  rewrite resize_all_alt. 2:{
+    rewrite fmap_length.
+    reflexivity.
+  }
+  apply ctree_merge_map. {
+    rewrite fmap_length.
+    reflexivity.
+  }
+  clear H.
+  induction (ctree_flatten ω); try reflexivity.
+  simpl.
+  f_equal.
+  - destruct a.
+    destruct tagged_perm; try reflexivity.
+    destruct l0; reflexivity.
+  - apply IHl.
+Qed.
+
 Lemma mem_unlock_mem_lock b m:
   mem_unlock_all (mem_lock Γ (addr_top (N.pos b) sintT) m) = mem_unlock_all m.
 Proof.
