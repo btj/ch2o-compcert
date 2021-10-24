@@ -582,6 +582,36 @@ Proof.
   congruence.
 Qed.
 
+Lemma mem_unlock_all_mem_insert b v (m: mem K):
+  mem_unlock_all (<[addr_top (N.pos b) sintT: addr K:=v]{Γ}> m) =
+  <[addr_top (N.pos b) sintT:=v]{Γ}> (mem_unlock_all m).
+Proof.
+  rewrite !mem_unlock_all_spec'.
+  destruct m as [m].
+  simpl.
+  f_equal.
+  apply map_eq; intro i.
+  rewrite !lookup_fmap.
+  destruct (classic (i = N.pos b)). 2:{
+    rewrite !lookup_alter_ne; try congruence.
+    rewrite lookup_fmap.
+    reflexivity.
+  }
+  subst.
+  rewrite !lookup_alter.
+  rewrite lookup_fmap.
+  destruct (m !! (N.pos b: index)); try reflexivity.
+  destruct c as [|ω μ]; try reflexivity.
+  simpl.
+  f_equal.
+  f_equal.
+  rewrite ctree_map_of_val with (g:=perm_unlock). 2:{ intros; reflexivity. }
+  f_equal.
+  rewrite ctree_flatten_map.
+  rewrite <- !list_fmap_compose.
+  reflexivity.
+Qed.
+
 Lemma lrred_safe e ė θ:
   expr_equiv e ė θ →
   ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
@@ -970,7 +1000,7 @@ induction 1; intros.
           constructor.
           assumption.
       }
-      
+      rewrite mem_unlock_all_mem_lock.
       
 Qed.
 
