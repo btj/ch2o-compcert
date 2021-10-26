@@ -10,7 +10,7 @@ Section Program.
 
 Local Open Scope string_scope.
 
-Context (Γ: types.env K) (δ: funenv K) (p: Csyntax.program).
+Context (Γ: types.env K) (δ: funenv K) (p: Csyntax.program) (valid_Γ: ✓ Γ).
 
 Notation tint := (Tint I32 Signed noattr).
 
@@ -244,19 +244,41 @@ Definition compcert_val_of(oz: option Z): Values.val :=
     None => Vundef
   | Some z => Vint (Int.repr z)
   end.
+  
+Lemma mem_lookup_dom m i v:
+  m !!{Γ} addr_top i sintT = Some v → i ∈ dom indexset m.
+Proof.
+  unfold lookupE.
+  unfold mem_lookup.
+  unfold lookupE.
+  unfold cmap_lookup.
+  rewrite option_guard_True. 2:{ constructor. simpl. lia. }
+  unfold lookupE.
+  unfold cmap_lookup_ref.
+  simpl.
+  case_eq (cmap_car m !! i); simpl; intros; try congruence.
+  apply elem_of_dom_2 in H.
+  destruct m.
+  assumption.
+Qed.
 
 Inductive block_equiv(m: memory_map.mem K)(ṁ: Memory.Mem.mem)(b: Values.block): Prop :=
 | block_equiv_not_alloced:
+  (*
   Memory.Mem.loadv AST.Mint32 ṁ (Vptr b Ptrofs.zero) = None →
   (∀ v, Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero) v = None) →
   Memory.Mem.free ṁ b 0%Z 4%Z = None →
   m !!{Γ} addr_top (Npos b) sintT = None →
   ~ mem_writable Γ (addr_top (Npos b) sintT) m →
+  *)
+  (Npos b: index) ∉ dom indexset m →
   block_equiv m ṁ b
 | block_equiv_alloced oz:
   Memory.Mem.loadv AST.Mint32 ṁ (Vptr b Ptrofs.zero) = Some (compcert_val_of oz) →
   (∀ z', Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero) (Vint (Int.repr z')) ≠ None) →
   Memory.Mem.free ṁ b 0%Z 4%Z ≠ None →
+  (Npos b: index) ∈ dom indexset m →
+  (Γ, '{m}) ⊢ addr_top (N.pos b) sintT : TType sintT%T →
   m !!{Γ} addr_top (Npos b) sintT = Some (ch2o_val_of oz) →
   mem_writable Γ (addr_top (Npos b) sintT) m →
   match oz with None => True | Some z => int_typed z (sintT: int_type K) end →
@@ -265,8 +287,108 @@ Inductive block_equiv(m: memory_map.mem K)(ṁ: Memory.Mem.mem)(b: Values.block)
 
 Record mem_equiv(m: memory_map.mem K)(ṁ: Memory.Mem.mem) := {
   blocks_equiv: ∀ b, block_equiv m ṁ b;
-  domains_equiv: ∀ b, (ṁ.(Memory.Mem.nextblock) ≤ b)%positive → (Npos b : index) ∉ dom indexset m
+  domains_equiv: ∀ b, (ṁ.(Memory.Mem.nextblock) ≤ b)%positive → (Npos b : index) ∉ dom indexset m;
+  mem_valid: ✓{Γ} m
 }.
+
+Lemma mem_equiv_insert m ṁ b z ṁ':
+  mem_equiv m ṁ →
+  (Npos b: index) ∈ dom indexset m →
+  (Γ, '{m}) ⊢ addr_top (N.pos b) sintT : TType sintT%T →
+  mem_writable Γ (addr_top (N.pos b) sintT) m →
+  Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero)
+    (Vint (Int.repr z)) = Some ṁ' →
+  int_typed z (sintT: int_type K) →
+  mem_equiv
+    (<[addr_top (N.pos b) sintT:=intV{sintT} z]{Γ}> m)
+    ṁ'.
+Proof.
+  intros ? Hdom Hwelltyped; intros.
+  assert (Hvalue_welltyped: (Γ, '{m}) ⊢ intV{sintT} z : sintT%T). {
+    constructor.
+    constructor.
+    assumption.
+  }
+  split.
+  - intros.
+    destruct H.
+    destruct (classic (b0 = b)).
+    + subst.
+      destruct (blocks_equiv0 b); try tauto.
+      apply block_equiv_alloced with (oz:=Some z).
+      * simpl.
+        simpl in H1.
+        apply Memory.Mem.load_store_same with (1:=H1).
+      * intro.
+        destruct (Memory.Mem.valid_access_store ṁ' AST.Mint32 b (Ptrofs.unsigned Ptrofs.zero) (Vint (Int.repr z'))). {
+          apply Memory.Mem.store_valid_access_1 with (1:=H1).
+          apply Memory.Mem.store_valid_access_3 with (1:=H1).
+        }
+        simpl.
+        congruence.
+      * destruct (Memory.Mem.range_perm_free ṁ' b 0 4). {
+          intro; intros.
+          apply Memory.Mem.perm_store_1 with (1:=H1).
+          case_eq (Memory.Mem.free ṁ b 0 4); intros; try congruence.
+          apply Memory.Mem.free_range_perm with (1:=H11).
+          assumption.
+        }
+        congruence.
+      * rewrite mem_dom_insert.
+        assumption.
+      * erewrite mem_insert_memenv_of; try eassumption.
+      * assert (freeze true (ch2o_val_of (Some z)) = ch2o_val_of (Some z)). reflexivity.
+        rewrite <- H10.
+        eapply mem_lookup_insert; try eassumption.
+        constructor.
+      * eapply mem_insert_writable; try eassumption.
+        tauto.
+      * assumption.
+    + destruct (blocks_equiv0 b0).
+      * apply block_equiv_not_alloced.
+        rewrite mem_dom_insert.
+        assumption.
+      * apply block_equiv_alloced with (oz:=oz).
+        -- simpl.
+           rewrite Memory.Mem.load_store_other with (1:=H1).
+           ++ assumption.
+           ++ left; assumption.
+        -- intros.
+           destruct (Memory.Mem.valid_access_store ṁ' AST.Mint32 b0 (Ptrofs.unsigned Ptrofs.zero) (Vint (Int.repr z'))). {
+             apply Memory.Mem.store_valid_access_1 with (1:=H1).
+             case_eq (Memory.Mem.storev AST.Mint32 ṁ (Vptr b0 Ptrofs.zero) (Vint (Int.repr z'))); intros. 2:{ elim (H4 z' H11). }
+             apply Memory.Mem.store_valid_access_3 with (1:=H11).
+           }
+           simpl.
+           congruence.
+        -- destruct (Memory.Mem.range_perm_free ṁ' b0 0 4). {
+             intro; intros.
+             apply Memory.Mem.perm_store_1 with (1:=H1).
+             case_eq (Memory.Mem.free ṁ b0 0 4); intros; try congruence.
+             apply Memory.Mem.free_range_perm with (1:=H12).
+             assumption.
+           }
+           congruence.
+        -- rewrite mem_dom_insert.
+           assumption.
+        -- erewrite mem_insert_memenv_of; try eassumption.
+        -- eapply mem_lookup_insert_disjoint; try eassumption.
+           constructor.
+           simpl.
+           congruence.
+        -- eapply mem_insert_writable; try eassumption.
+           right.
+           constructor.
+           simpl; congruence.
+        -- assumption.
+  - destruct H.
+    intros.
+    rewrite mem_dom_insert.
+    rewrite Memory.Mem.nextblock_store with (1:=H1) in H.
+    auto.
+  - destruct H.
+    eapply mem_insert_valid'; try eassumption.
+Qed.
 
 Inductive env_equiv(ẽ: Csem.env): list AST.ident → list (index * types.type K) → Prop :=
 | env_equiv_nil:
@@ -911,13 +1033,13 @@ induction 1; intros.
     simpl in H.
     injection H; clear H; intros; subst.
     pose proof (blocks_equiv _ _ H3 b).
-    inversion H; clear H; subst; try congruence.
-    assert (v = compcert_val_of oz). congruence. subst.
     assert (Hsafe': Γ \ ρ ⊢ₕ safe (load (% Ptr (addr_top (N.pos b) sintT))), m). {
       apply Hsafe with (E:=[]); try reflexivity.
       repeat constructor.
     }
     inversion Hsafe'; clear Hsafe'; subst.
+    inversion H2; clear H2; subst; try congruence.
+    assert (v = compcert_val_of oz). congruence. subst.
     inversion H; clear H; subst.
     exists []; eexists; eexists; exists m.
     split. { reflexivity. }
@@ -1001,7 +1123,7 @@ induction 1; intros.
           assumption.
       }
       rewrite mem_unlock_all_mem_lock.
-      
+      rewrite mem_unlock_all_mem_insert.
 Qed.
 
 Lemma expr_equiv_no_call e ė θ:
