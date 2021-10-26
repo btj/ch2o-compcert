@@ -262,6 +262,22 @@ Proof.
   assumption.
 Qed.
 
+Lemma mem_writable_dom i m:
+  mem_writable Γ (addr_top i sintT) m → i ∈ dom indexset m.
+Proof.
+  destruct m as [m].
+  unfold mem_writable.
+  intros.
+  destruct H as [w [? ?]].
+  unfold lookupE in H.
+  unfold cmap_lookup in H.
+  rewrite option_guard_True in H. 2:{ constructor. simpl. lia. }
+  simpl in H.
+  case_eq (m !! i); intros; rewrite H1 in H; try discriminate.
+  apply elem_of_dom_2 in H1.
+  assumption.
+Qed.
+
 Inductive block_equiv(m: memory_map.mem K)(ṁ: Memory.Mem.mem)(b: Values.block): Prop :=
 | block_equiv_not_alloced:
   (*
@@ -734,6 +750,14 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma dom_mem_unlock_all (m: mem K): dom indexset (mem_unlock_all m) = dom indexset m.
+Proof.
+  rewrite mem_unlock_all_spec'.
+  destruct m as [m].
+  simpl.
+  apply dom_fmap_L.
+Qed.
+
 Lemma lrred_safe e ė θ:
   expr_equiv e ė θ →
   ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
@@ -1039,8 +1063,11 @@ induction 1; intros.
     }
     inversion Hsafe'; clear Hsafe'; subst.
     inversion H2; clear H2; subst; try congruence.
+    pose proof H10.
+    apply mem_lookup_dom in H2.
+    rewrite <- dom_mem_unlock_all in H2.
+    inversion H; clear H; subst; try tauto.
     assert (v = compcert_val_of oz). congruence. subst.
-    inversion H; clear H; subst.
     exists []; eexists; eexists; exists m.
     split. { reflexivity. }
     split. {
@@ -1061,9 +1088,9 @@ induction 1; intros.
       eassumption.
     }
     split. {
-      apply mem_unlock_all_lookup in H15.
-      rewrite H7 in H15.
-      injection H15; clear H15; intros; subst.
+      apply mem_unlock_all_lookup in H10.
+      rewrite H10 in H11.
+      injection H11; clear H11; intros; subst.
       destruct oz; constructor.
       assumption.
     }
@@ -1115,15 +1142,26 @@ induction 1; intros.
       subst.
       split. {
         simpl.
-        destruct (blocks_equiv _ _ H4 b).
-        - elim H9.
-          apply mem_writable_unlock_all with (1:=H13).
-        - simpl.
-          constructor.
-          assumption.
+        constructor.
+        assumption.
       }
       rewrite mem_unlock_all_mem_lock.
       rewrite mem_unlock_all_mem_insert.
+      inversion H4; subst.
+      assert ((N.pos b: index) ∈ dom indexset (mem_unlock_all m)). {
+        rewrite dom_mem_unlock_all.
+        apply mem_writable_dom with (1:=H13).
+      }
+      destruct (blocks_equiv0 b); try tauto.
+      eapply mem_equiv_insert; try eassumption.
+    * lapply (Hsafe [] _ eq_refl). 2:{ repeat constructor. }
+      intros.
+      inversion H; clear H; subst.
+      inversion H0; clear H0; subst.
+      inversion H13; clear H13; subst.
+      inversion H; clear H; subst.
+      discriminate.
+  + 
 Qed.
 
 Lemma expr_equiv_no_call e ė θ:
