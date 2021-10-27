@@ -1,5 +1,5 @@
 From ch2o_compcert Require Export ch2o_safety compcertc_safety.
-From ch2o Require Export stringmap types expressions statements architectures state.
+From ch2o Require Export stringmap types expressions statements architectures architecture_spec state.
 (* We prove soundness for LP64 architectures. *)
 From ch2o_compcert Require Export ch2o_lp64.
 From compcert Require Export Cop Csyntax Ctypes Globalenvs.
@@ -1189,7 +1189,40 @@ induction 1; intros.
       inversion H13; clear H13; subst.
       inversion H; clear H; subst.
       discriminate.
-  + 
+  + injection H2; clear H2; intros; subst.
+    destruct (IHexpr_equiv1 _ _ _ _ _ _ _ _ _ _ _ H6 eq_refl H3 H4 H5) as [E [e1' [e2' [m' [? [? [? ?]]]]]]]. {
+      intros; subst.
+      apply Hsafe with (E0:=E++[CAssignL Assign e2]) (2:=H2).
+      rewrite subst_snoc; reflexivity.
+    }
+    subst.
+    exists (E ++ [CAssignL Assign e2]); eexists; eexists; eexists.
+    rewrite ! subst_snoc; simpl.
+    split. { reflexivity. }
+    split. { eassumption. }
+    split. {
+      simpl.
+      constructor; assumption.
+    }
+    assumption.
+  + injection H2; clear H2; intros; subst.
+    destruct (IHexpr_equiv2 _ _ _ _ _ _ _ _ _ _ _ H6 eq_refl H3 H4 H5) as [E [e1' [e2' [m' [? [? [? ?]]]]]]]. {
+      intros; subst.
+      apply Hsafe with (E0:=E++[CAssignR Assign e1]) (2:=H2).
+      rewrite subst_snoc; reflexivity.
+    }
+    subst.
+    exists (E ++ [CAssignR Assign e1]); eexists; eexists; eexists.
+    rewrite ! subst_snoc; simpl.
+    split. { reflexivity. }
+    split. { eassumption. }
+    split. {
+      simpl.
+      constructor; assumption.
+    }
+    assumption.
+  Unshelve.
+  exact (IntEnvSpec_instance_0 A).
 Qed.
 
 Lemma expr_equiv_no_call e ė θ:
