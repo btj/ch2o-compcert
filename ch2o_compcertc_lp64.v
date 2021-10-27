@@ -278,6 +278,23 @@ Proof.
   assumption.
 Qed.
 
+Lemma mem_lookup_index_alive m i v:
+  m !!{Γ} addr_top i sintT = Some v → index_alive '{m} i.
+Proof.
+  destruct m as [m]; simpl.
+  unfold mem_lookup; simpl.
+  unfold cmap_lookup.
+  unfold index_alive.
+  rewrite option_guard_True. 2:{ constructor. simpl. lia. }
+  simpl.
+  case_eq (m !! i); simpl; intros; try congruence.
+  destruct c as [|w μ]; simpl in H0; try congruence.
+  exists (type_of w).
+  rewrite lookup_fmap.
+  rewrite H.
+  reflexivity.
+Qed.
+
 Inductive block_equiv(m: memory_map.mem K)(ṁ: Memory.Mem.mem)(b: Values.block): Prop :=
 | block_equiv_not_alloced:
   (*
@@ -287,13 +304,13 @@ Inductive block_equiv(m: memory_map.mem K)(ṁ: Memory.Mem.mem)(b: Values.block)
   m !!{Γ} addr_top (Npos b) sintT = None →
   ~ mem_writable Γ (addr_top (Npos b) sintT) m →
   *)
-  (Npos b: index) ∉ dom indexset m →
+  ¬ index_alive '{m} (Npos b) →
   block_equiv m ṁ b
 | block_equiv_alloced oz:
   Memory.Mem.loadv AST.Mint32 ṁ (Vptr b Ptrofs.zero) = Some (compcert_val_of oz) →
   (∀ z', Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero) (Vint (Int.repr z')) ≠ None) →
   Memory.Mem.free ṁ b 0%Z 4%Z ≠ None →
-  (Npos b: index) ∈ dom indexset m →
+  index_alive '{m} (Npos b) →
   (Γ, '{m}) ⊢ addr_top (N.pos b) sintT : TType sintT%T →
   m !!{Γ} addr_top (Npos b) sintT = Some (ch2o_val_of oz) →
   mem_writable Γ (addr_top (Npos b) sintT) m →
@@ -309,7 +326,6 @@ Record mem_equiv(m: memory_map.mem K)(ṁ: Memory.Mem.mem) := {
 
 Lemma mem_equiv_insert m ṁ b z ṁ':
   mem_equiv m ṁ →
-  (Npos b: index) ∈ dom indexset m →
   (Γ, '{m}) ⊢ addr_top (N.pos b) sintT : TType sintT%T →
   mem_writable Γ (addr_top (N.pos b) sintT) m →
   Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero)
@@ -319,7 +335,7 @@ Lemma mem_equiv_insert m ṁ b z ṁ':
     (<[addr_top (N.pos b) sintT:=intV{sintT} z]{Γ}> m)
     ṁ'.
 Proof.
-  intros ? Hdom Hwelltyped; intros.
+  intros ? Hwelltyped; intros.
   assert (Hvalue_welltyped: (Γ, '{m}) ⊢ intV{sintT} z : sintT%T). {
     constructor.
     constructor.
@@ -330,7 +346,10 @@ Proof.
     destruct H.
     destruct (classic (b0 = b)).
     + subst.
-      destruct (blocks_equiv0 b); try tauto.
+      destruct (blocks_equiv0 b). {
+        elim H.
+        eapply mem_writable_alive in H0; try eassumption.
+      }
       apply block_equiv_alloced with (oz:=Some z).
       * simpl.
         simpl in H1.
@@ -350,8 +369,7 @@ Proof.
           assumption.
         }
         congruence.
-      * rewrite mem_dom_insert.
-        assumption.
+      * erewrite mem_insert_memenv_of; try eassumption.
       * erewrite mem_insert_memenv_of; try eassumption.
       * assert (freeze true (ch2o_val_of (Some z)) = ch2o_val_of (Some z)). reflexivity.
         rewrite <- H10.
@@ -362,8 +380,7 @@ Proof.
       * assumption.
     + destruct (blocks_equiv0 b0).
       * apply block_equiv_not_alloced.
-        rewrite mem_dom_insert.
-        assumption.
+        erewrite mem_insert_memenv_of; eassumption.
       * apply block_equiv_alloced with (oz:=oz).
         -- simpl.
            rewrite Memory.Mem.load_store_other with (1:=H1).
@@ -385,8 +402,7 @@ Proof.
              assumption.
            }
            congruence.
-        -- rewrite mem_dom_insert.
-           assumption.
+        -- erewrite mem_insert_memenv_of; eassumption.
         -- erewrite mem_insert_memenv_of; try eassumption.
         -- eapply mem_lookup_insert_disjoint; try eassumption.
            constructor.
@@ -758,6 +774,19 @@ Proof.
   apply dom_fmap_L.
 Qed.
 
+Lemma memenv_of_mem_unlock_all (m: mem K): '{mem_unlock_all m} = '{m}.
+Proof.
+  rewrite mem_unlock_all_spec'.
+  destruct m as [m].
+  simpl.
+  apply map_eq; intro i.
+  rewrite !lookup_fmap.
+  destruct (m !! i); try reflexivity.
+  destruct c as [|w μ]; simpl; try reflexivity.
+  rewrite ctree_map_type_of.
+  reflexivity.
+Qed.
+
 Lemma lrred_safe e ė θ:
   expr_equiv e ė θ →
   ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
@@ -1064,8 +1093,8 @@ induction 1; intros.
     inversion Hsafe'; clear Hsafe'; subst.
     inversion H2; clear H2; subst; try congruence.
     pose proof H10.
-    apply mem_lookup_dom in H2.
-    rewrite <- dom_mem_unlock_all in H2.
+    apply mem_lookup_index_alive in H2.
+    rewrite <- memenv_of_mem_unlock_all in H2.
     inversion H; clear H; subst; try tauto.
     assert (v = compcert_val_of oz). congruence. subst.
     exists []; eexists; eexists; exists m.
@@ -1148,10 +1177,9 @@ induction 1; intros.
       rewrite mem_unlock_all_mem_lock.
       rewrite mem_unlock_all_mem_insert.
       inversion H4; subst.
-      assert ((N.pos b: index) ∈ dom indexset (mem_unlock_all m)). {
-        rewrite dom_mem_unlock_all.
-        apply mem_writable_dom with (1:=H13).
-      }
+      pose proof H13.
+      apply mem_writable_unlock_all in H3.
+      eapply mem_writable_alive with (Δ:='{mem_unlock_all m}) in H3; try eassumption.
       destruct (blocks_equiv0 b); try tauto.
       eapply mem_equiv_insert; try eassumption.
     * lapply (Hsafe [] _ eq_refl). 2:{ repeat constructor. }
