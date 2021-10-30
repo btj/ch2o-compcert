@@ -1345,7 +1345,7 @@ induction 1; intros.
       }
       constructor.
       simpl.
-      assert (Γ \ ρ ⊢ₕ safe (# intV{sintT} z / # intV{sintT} z0)%E, m). {
+      assert (Γ \ ρ ⊢ₕ safe (#{Ω} intV{sintT} z / #{Ω0} intV{sintT} z0)%E, m). {
         apply H3 with (E:=[]).
         - reflexivity.
         - constructor; constructor.
@@ -1434,23 +1434,71 @@ induction 1; intros.
     intros.
     inversion H; clear H; subst.
     inversion H3; clear H3; subst.
-    destruct (blocks_equiv _ _ H0 b). {
-      assert (forall {X} (x1 x2 x3 x4: X), x1 = x2 -> x3 = x4 -> x1 = x3 -> x2 = x4). {
-        intros; congruence.
-      }
-      lapply (H7 _ _ _ _ _ H5 H8); try reflexivity.
-      intros; congruence.
-    }
+    pose proof H8.
+    apply mem_lookup_index_alive in H.
+    destruct (blocks_equiv _ _ H0 b); try tauto.
     eapply imm_safe_rred with (C:=λ x, x). 2:{ apply ctx_top. }
     constructor.
     eapply deref_loc_value; try reflexivity.
-    apply H.
+    apply H3.
   + eapply imm_safe_lred with (C:=λ x, Evalof (C x) tint). 2:{ constructor. assumption. }
     eassumption.
   + eapply imm_safe_rred with (C:=λ x, Evalof (C x) tint). 2:{ constructor. assumption. }
     eassumption.
   + eelim (expr_equiv_no_call _ _ _ H); eauto.
 - apply imm_safe_val.
+- assert (imm_safe (globalenv p) ẽ LV ė1 ṁ). {
+    eapply IHexpr_equiv1; try eassumption.
+    intros; subst.
+    apply H3 with (E0:=E++[CAssignL Assign e2]); try assumption.
+    rewrite subst_snoc.
+    reflexivity.
+  }
+  inversion H4; clear H4; subst.
+  + assert (imm_safe (globalenv p) ẽ RV ė2 ṁ). {
+      eapply IHexpr_equiv2; try eassumption.
+      intros; subst.
+      apply H3 with (E0:=E++[CAssignR Assign e1]); try assumption.
+      rewrite subst_snoc.
+      reflexivity.
+    }
+    inversion H4; clear H4; subst.
+    * inversion H; clear H; subst.
+      inversion H0; clear H0; subst.
+      -- lapply (H3 [] _ eq_refl). 2:{ constructor. constructor. constructor. }
+         intros.
+         inversion H; clear H; subst.
+         inversion H0; clear H0; subst.
+         pose proof H12.
+         destruct H1.
+         eapply mem_writable_alive in H; try eassumption.
+         destruct (blocks_equiv0 b); try tauto.
+         case_eq (Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero) (Vint (Int.repr z))); intros. 2:{
+           elim (H1 _ H11).
+         }
+         eapply imm_safe_rred with (C:=λ x, x). 2:{ apply ctx_top. }
+         constructor. {
+           apply sem_cast_int.
+         }
+         econstructor; try reflexivity.
+         eassumption.
+      -- lapply (H3 [] _ eq_refl). 2:{ constructor. constructor. constructor. }
+         intros.
+         inversion H; clear H; subst.
+         inversion H0; clear H0; subst.
+         inversion H12; clear H12; subst.
+         inversion H; clear H; subst.
+         discriminate.
+    * eapply imm_safe_lred with (C:=λ x, Eassign (Eloc b ofs ty) (C x) tint). 2:{ constructor. assumption. }
+      eassumption.
+    * eapply imm_safe_rred with (C:=λ x, Eassign (Eloc b ofs ty) (C x) tint). 2:{ constructor. assumption. }
+      eassumption.
+    * eelim (expr_equiv_no_call _ _ _ H0); eauto.
+  + eapply imm_safe_lred with (C:=λ x, Eassign (C x) ė2 tint). 2:{ constructor; assumption. }
+    eassumption.
+  + eapply imm_safe_rred with (C:=λ x, Eassign (C x) ė2 tint). 2:{ constructor; assumption. }
+    eassumption.
+  + eelim (expr_equiv_no_call _ _ _ H); eauto.
 Qed.
 
 Lemma expr_equiv_subexpr_imm_safe:
