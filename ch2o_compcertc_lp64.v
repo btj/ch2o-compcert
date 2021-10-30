@@ -1283,7 +1283,7 @@ Definition kind_of_type(θ: type_): kind :=
 Lemma expr_equiv_imm_safe e ė θ:
   expr_equiv e ė θ →
   ∀ m ṁ ẽ ρ,
-  mem_equiv m ṁ →
+  mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê ρ →
   (∀ (E: ectx K) e1, e = subst E e1 → is_redex e1 → Γ \ ρ ⊢ₕ safe e1, m) →
   imm_safe (globalenv p) ẽ (kind_of_type θ) ė ṁ.
@@ -1436,6 +1436,7 @@ induction 1; intros.
     inversion H3; clear H3; subst.
     pose proof H8.
     apply mem_lookup_index_alive in H.
+    rewrite <- memenv_of_mem_unlock_all in H.
     destruct (blocks_equiv _ _ H0 b); try tauto.
     eapply imm_safe_rred with (C:=λ x, x). 2:{ apply ctx_top. }
     constructor.
@@ -1471,6 +1472,7 @@ induction 1; intros.
          inversion H0; clear H0; subst.
          pose proof H12.
          destruct H1.
+         apply mem_writable_unlock_all in H.
          eapply mem_writable_alive in H; try eassumption.
          destruct (blocks_equiv0 b); try tauto.
          case_eq (Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero) (Vint (Int.repr z))); intros. 2:{
@@ -1508,7 +1510,7 @@ Lemma expr_equiv_subexpr_imm_safe:
   expr_equiv e ė θ →
   K2 = kind_of_type θ →
   ∀ m ṁ ẽ ρ a,
-  mem_equiv m ṁ →
+  mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê ρ →
   ė = C a →
   (∀ (E: ectx K) e1, e = subst E e1 → is_redex e1 → Γ \ ρ ⊢ₕ safe e1, m) →
@@ -1538,17 +1540,35 @@ Proof.
     rewrite subst_snoc; reflexivity.
 Qed.
 
+Lemma ch2o_safe_state_subexpr_safe Q k e m:
+  ch2o_safe_state Γ δ Q (State k (Expr e) m) →
+  ∀ (E : ectx K) (e1 : expressions.expr K),
+  e = subst E e1 → is_redex e1 → Γ \ locals k ⊢ₕ safe e1, m.
+Proof.
+  intros.
+  destruct (classic (Γ \ locals k ⊢ₕ safe e1, m)); try assumption.
+  edestruct H.
+  - eapply rtc_l.
+    + rewrite H0.
+      eapply cstep_expr_undef; eassumption.
+    + apply rtc_refl.
+  - inversion H3.
+  - destruct H3.
+    inversion H3.
+Qed.
+
 Lemma eval_soundness Q n e ė k ḳ m ṁ ẽ f:
   expr_equiv e ė Int →
-  mem_equiv m ṁ →
+  mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê (locals k) →
   ch2o_safe_state Γ δ Q (State k (Expr e) m) →
   (∀ n',
    n' ≤ n →
-   ∀ Ω ν v,
-   ch2o_safe_state Γ δ Q (State k (Expr (%#{ Ω } ν)) m) →
+   ∀ Ω ν v m' ṁ',
+   ch2o_safe_state Γ δ Q (State k (Expr (%#{ Ω } ν)) m') →
    expr_equiv (%#{ Ω } ν) v Int →
-   compcertc_safe_state_n Q p n' (ExprState f v ḳ ẽ ṁ)) →
+   mem_equiv (mem_unlock_all m') ṁ' →
+   compcertc_safe_state_n Q p n' (ExprState f v ḳ ẽ ṁ')) →
   compcertc_safe_state_n Q p n (ExprState f ė ḳ ẽ ṁ).
 Proof.
 revert e ė m ṁ.
@@ -1574,11 +1594,11 @@ inversion HstarN; subst.
 - case_eq (match ė with Eval _ _ => true | _ => false end); intros. {
     inversion H; clear H; subst; try discriminate.
     - unfold compcertc_safe_state_n in H1.
-      eapply H1 with (n':=S n0) (4:=HstarN); try eauto.
+      eapply H1 with (n':=S n0) (5:=HstarN); try eauto.
       constructor.
       assumption.
     - unfold compcertc_safe_state_n in H1.
-      eapply H1 with (n':=S n0) (4:=HstarN); try eauto.
+      eapply H1 with (n':=S n0) (5:=HstarN); try eauto.
       constructor.
   }
   destruct H2. 2:{
@@ -1586,10 +1606,11 @@ inversion HstarN; subst.
   }
   inversion H2; clear H2; subst.
   + (* step_Lred *)
-    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [He1 [He1e2 [Hee' Hṁ']]]]]]; try (eassumption || reflexivity). {
+    rename m' into ṁ'.
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' Hṁ']]]]]]]; try (eassumption || reflexivity). {
       apply lrred_lred.
       eassumption.
-    }
+    } { apply ch2o_safe_state_subexpr_safe with (1:=H0). }
     unfold compcertc_safe_state_n in IH.
     subst.
     eapply IH with (2:=Hee') (7:=H3); try eassumption.
@@ -1603,9 +1624,10 @@ inversion HstarN; subst.
     * intros n' Hn'.
       apply (H1 n'); lia.
   + (* step_rred *)
-    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [He1 [He1e2 [Hee' Hṁ']]]]]]; try (eassumption || reflexivity). {
+    rename m' into ṁ'.
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' Hṁ']]]]]]]; try (eassumption || reflexivity). {
       apply lrred_rred; eassumption.
-    }
+    } { apply ch2o_safe_state_subexpr_safe with (1:=H0). }
     unfold compcertc_safe_state_n in IH.
     subst.
     eapply IH with (2:=Hee') (7:=H3); try eassumption.
@@ -1614,10 +1636,6 @@ inversion HstarN; subst.
       intro HS'.
       apply H0.
       eapply rtc_l; try eassumption.
-      assert (∀ e, cast{sintT%T} (subst E e) = subst (E ++ [CCast (sintT%T)]) e)%E. {
-        intros; rewrite subst_snoc.
-        reflexivity.
-      }
       apply cstep_expr_head.
       apply He1e2.
     * intros n' Hn'.
@@ -1627,17 +1645,9 @@ inversion HstarN; subst.
     elim H; reflexivity.
   + elim H13; clear H13.
     eapply expr_equiv_subexpr_imm_safe with (1:=H12) (2:=H); try (eassumption || reflexivity).
-    intros.
-    destruct (classic (Γ \ locals k ⊢ₕ safe e1, m)); try eassumption.
-    destruct (H0 (State k (Undef (UndefExpr E e1)) m)). {
-      eapply rtc_l; [|apply rtc_refl].
-      subst.
-      apply cstep_expr_undef; assumption.
-    }
-    * inversion H7.
-    * destruct H7 as [S'' H7].
-      inversion H7.
+    apply ch2o_safe_state_subexpr_safe with (1:=H0).
 Qed.
+
 
 Lemma eval_soundness' Q n e ė k ḳ m ṁ f:
   expr_equiv e ė →
