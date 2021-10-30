@@ -1260,6 +1260,18 @@ induction 1; intros.
 - inversion H0; subst; try discriminate.
   intro; subst.
   inversion H.
+- inversion H2; subst; try discriminate.
+  + intro.
+    subst.
+    inversion H1.
+  + intro.
+    injection H4; clear H4; intros; subst.
+    apply IHexpr_equiv1 with (1:=H1) (2:=H3).
+    reflexivity.
+  + intro.
+    injection H4; clear H4; intros; subst.
+    apply IHexpr_equiv2 with (1:=H1) (2:=H3).
+    reflexivity.
 Qed.
 
 Definition kind_of_type(θ: type_): kind :=
