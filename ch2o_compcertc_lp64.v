@@ -1528,6 +1528,14 @@ Proof.
     intros; subst.
     eapply H5 with (E0:=E++[CBinOpR (ArithOp DivOp) e0]) (2:=H4).
     rewrite subst_snoc; reflexivity.
+  - eapply IHcontext with (1:=H10); eauto.
+    intros; subst.
+    eapply H5 with (E0:=E++[CAssignL Assign e0]); eauto.
+    rewrite subst_snoc; reflexivity.
+  - eapply IHcontext with (1:=H11); eauto.
+    intros; subst.
+    eapply H5 with (E0:=E++[CAssignR Assign e0]); eauto.
+    rewrite subst_snoc; reflexivity.
 Qed.
 
 Lemma eval_soundness Q n e ė k ḳ m ṁ ẽ f:
