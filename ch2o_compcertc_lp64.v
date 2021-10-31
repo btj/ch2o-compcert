@@ -819,46 +819,6 @@ Proof.
     lia.
 Qed.
 
-  assert (∀ (w: mtree K) bs, Datatypes.length bs = Datatypes.length (ctree_flatten w) → ctree_map pbit_unlock (ctree_merge pbit_unlock_if w bs) = ctree_map pbit_unlock w). {
-    intro w0.
-    apply ctree_ind_alt with (w:=w0); intros; simpl.
-    - f_equal.
-      revert bs H.
-      induction xs; intros; try reflexivity.
-      simpl.
-      destruct bs; try discriminate.
-      simpl.
-      f_equal.
-      + destruct a as [[[]|[]]]; destruct b; try reflexivity.
-      + apply IHxs.
-        simpl in H.
-        simpl.
-        congruence.
-    - f_equal.
-      revert bs H0; induction ws; intros; try reflexivity.
-      simpl.
-      inversion H; clear H; subst.
-      f_equal.
-      + apply H3.
-        apply take_length_le.
-        simpl in H0.
-        rewrite app_length in H0.
-        lia.
-      + apply IHws.
-        assumption.
-        rewrite drop_length.
-        simpl in H0.
-        rewrite app_length in H0.
-        simpl.
-        unfold mbind.
-        lia.
-    - f_equal.
-
-        
-      
-    
-    
-  
 Lemma mem_unlock_all_mem_insert b v (m: mem K):
   mem_unlock_all (<[addr_top (N.pos b) sintT: addr K:=v]{Γ}> m) =
   <[addr_top (N.pos b) sintT:=v]{Γ}> (mem_unlock_all m).
@@ -2002,7 +1962,7 @@ Lemma stmt_soundness Q f s ṡ:
   (∀ n',
    n' ≤ n →
    ∀ m' ṁ',
-   ch2o_safe_state Γ δ Q (State k (Stmt ↗ s) m) →
+   ch2o_safe_state Γ δ Q (State k (Stmt ↗ s) m') →
    mem_equiv (mem_unlock_all m') ṁ' →
    compcertc_safe_state_n Q p n' (Csem.State f Sskip ḳ ẽ ṁ')) →
   (∀ n',
@@ -2033,19 +1993,18 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
     apply cstep_expr with (E:=CReturnE).
   }
   intros.
-  eapply H2 with (m':=mem_unlock Ω m); try eassumption.
+  eapply H2 with (m':=mem_unlock Ω m'); try eassumption.
   + lia.
   + reflexivity.
-  + Search mem_unlock.
-    rewrite mem_unlock_all_unlock. 
+  + rewrite mem_unlock_all_mem_unlock.
+    eassumption.
   + intro; intros.
     eapply H6.
     eapply rtc_l; [|eassumption].
-    rewrite <- mem_unlock_empty at 2.
     constructor.
 - (* skip *)
   intros.
-  eapply H0.
+  eapply H0; try eassumption.
   + reflexivity.
   + intro; intros.
     eapply H.
@@ -2061,44 +2020,44 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
     constructor.
   }
   inversion H5; clear H5; subst; inversion H4; clear H4; subst; try intuition discriminate.
-  eapply IHstmt_equiv1; try eassumption. {
+  eapply IHstmt_equiv1 with (n:=n0) (ḳ:=Kseq ṡ2 ḳ). 3:{
     intro; intros.
     eapply H1.
     eapply rtc_l; [|eassumption].
     constructor.
-  } 2:{
+  } { eassumption. } { eassumption. } 2:{
     intros.
-    simpl in H7.
-    eapply H3; try eassumption.
-    - lia.
-    - intro; intros.
-      eapply H8.
-      eapply rtc_l; [|eassumption].
-      constructor.
+    eapply H3; try eassumption. { lia. }
+    intro; intros.
+    eapply H9.
+    eapply rtc_l; [|eassumption].
+    constructor.
+  } 2:{
+    eassumption.
   }
   intros.
   intro; intros.
-  inversion H7; clear H7; subst. {
+  inversion H8; clear H8; subst. {
     right.
     eexists; eexists.
     right.
     constructor.
   }
-  inversion H8; clear H8; subst; inversion H7; clear H7; subst. 2:{
-    inversion H15.
+  inversion H9; clear H9; subst; inversion H8; clear H8; subst. 2:{
+    inversion H16.
   }
-  eapply IHstmt_equiv2; try eassumption. {
+  eapply IHstmt_equiv2. 3:{
     intro; intros.
     eapply H5.
     eapply rtc_l; [|eassumption].
     constructor.
-  } 2:{
+  } { eassumption. } { eassumption. } 3:{ eassumption. } 2:{
     intros.
     intro; intros.
     eapply H3; try eassumption.
     + lia.
     + intro; intros.
-      eapply H11.
+      eapply H13.
       eapply rtc_l; [|eassumption].
       constructor.
   }
@@ -2106,7 +2065,7 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
   eapply H2; try eassumption.
   + lia.
   + intro; intros.
-    eapply H8.
+    eapply H9.
     eapply rtc_l; [|eassumption].
     constructor.
 - (* if *)
