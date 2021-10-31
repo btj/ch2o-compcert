@@ -736,6 +736,129 @@ Proof.
   congruence.
 Qed.
 
+Lemma fmap_zip_with {A B C D} (f: C → D) (g: A → B → C) xs ys:
+  f <$> zip_with g xs ys = zip_with (λ x y, f (g x y)) xs ys.
+Proof.
+  revert ys.
+  induction xs; intros; simpl.
+  - reflexivity.
+  - destruct ys.
+    + reflexivity.
+    + simpl.
+      f_equal.
+      apply IHxs.
+Qed.
+
+Lemma ctree_map_ctree_merge {A B C D} (f: C → D) (g: A → B → C) (w: ctree K A) ys:
+  ctree_map f (ctree_merge g w ys) = ctree_merge (λ x y, f (g x y)) w ys.
+Proof.
+  revert ys.
+  apply ctree_ind_alt with (w:=w); intros; simpl.
+  - f_equal.
+    apply fmap_zip_with.
+  - f_equal.
+    revert ys.
+    induction ws; intros; try reflexivity.
+    simpl.
+    inversion H; clear H; subst.
+    f_equal.
+    + apply H2.
+    + apply IHws.
+      apply H3.
+  - f_equal.
+    revert ys.
+    induction wxss; intros; try reflexivity.
+    destruct a.
+    simpl.
+    inversion H; clear H; subst.
+    f_equal.
+    + f_equal.
+      * apply H2.
+      * apply fmap_zip_with.
+    + apply IHwxss.
+      apply H3.
+  - f_equal.
+    + apply H.
+    + apply fmap_zip_with.
+  - f_equal.
+    apply fmap_zip_with.
+Qed.
+
+Lemma mem_unlock_all_mem_unlock Ω (m: mem K):
+  mem_unlock_all (mem_unlock Ω m) = mem_unlock_all m.
+Proof.
+  rewrite !mem_unlock_all_spec'.
+  destruct m as [m].
+  destruct Ω as [Ω HΩ].
+  simpl.
+  f_equal.
+  apply map_eq; intro i.
+  rewrite !lookup_fmap.
+  rewrite indexmap_merge_spec; [|reflexivity].
+  destruct (Ω !! i); try reflexivity.
+  destruct (m !! i); try reflexivity.
+  destruct c as [|w μ]; try reflexivity.
+  simpl.
+  f_equal.
+  f_equal.
+  rewrite ctree_map_ctree_merge.
+  apply ctree_merge_map. {
+    rewrite natmap.to_bools_length.
+    reflexivity.
+  }
+  pose proof (natmap.to_bools_length m0 (Datatypes.length (ctree_flatten w))).
+  revert H.
+  generalize (natmap.to_bools (Datatypes.length (ctree_flatten w)) m0).
+  induction (ctree_flatten w); intros; try reflexivity.
+  simpl.
+  destruct l0; try discriminate.
+  f_equal.
+  - destruct a as [[[]|[]]]; destruct b; try reflexivity.
+  - apply IHl.
+    simpl in H.
+    lia.
+Qed.
+
+  assert (∀ (w: mtree K) bs, Datatypes.length bs = Datatypes.length (ctree_flatten w) → ctree_map pbit_unlock (ctree_merge pbit_unlock_if w bs) = ctree_map pbit_unlock w). {
+    intro w0.
+    apply ctree_ind_alt with (w:=w0); intros; simpl.
+    - f_equal.
+      revert bs H.
+      induction xs; intros; try reflexivity.
+      simpl.
+      destruct bs; try discriminate.
+      simpl.
+      f_equal.
+      + destruct a as [[[]|[]]]; destruct b; try reflexivity.
+      + apply IHxs.
+        simpl in H.
+        simpl.
+        congruence.
+    - f_equal.
+      revert bs H0; induction ws; intros; try reflexivity.
+      simpl.
+      inversion H; clear H; subst.
+      f_equal.
+      + apply H3.
+        apply take_length_le.
+        simpl in H0.
+        rewrite app_length in H0.
+        lia.
+      + apply IHws.
+        assumption.
+        rewrite drop_length.
+        simpl in H0.
+        rewrite app_length in H0.
+        simpl.
+        unfold mbind.
+        lia.
+    - f_equal.
+
+        
+      
+    
+    
+  
 Lemma mem_unlock_all_mem_insert b v (m: mem K):
   mem_unlock_all (<[addr_top (N.pos b) sintT: addr K:=v]{Γ}> m) =
   <[addr_top (N.pos b) sintT:=v]{Γ}> (mem_unlock_all m).
@@ -1655,11 +1778,11 @@ Lemma eval_soundness_cast_int Q n e ė k ḳ m ṁ ẽ f:
   ch2o_safe_state Γ δ Q (State k (Expr (cast{sintT%T} e)) m) →
   (∀ n',
    n' ≤ n →
-   ∀ Ω ν v m' ṁ',
-   ch2o_safe_state Γ δ Q (State k (Expr (%#{ Ω } ν)) m') →
-   expr_equiv (%#{ Ω } ν) v Int →
+   ∀ Ω z m' ṁ',
+   int_typed z (sintT: int_type K) →
+   ch2o_safe_state Γ δ Q (State k (Expr (#{ Ω } (intV{sintT} z))) m') →
    mem_equiv (mem_unlock_all m') ṁ' →
-   compcertc_safe_state_n Q p n' (ExprState f v ḳ ẽ ṁ')) →
+   compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) ḳ ẽ ṁ')) →
   compcertc_safe_state_n Q p n (ExprState f ė ḳ ẽ ṁ).
 Proof.
 revert e ė m ṁ.
@@ -1669,7 +1792,7 @@ intros n IH.
 intros e ė m ṁ ? Hmem_equiv Henv_equiv; intros.
 case_eq (match ė with Eval _ _ => true | _ => false end); intros HEval. {
   inversion H; clear H; subst; try discriminate.
-  * eapply H1 with (n':=n); try eauto. 2:{ constructor. assumption. }
+  * eapply H1 with (n':=n); try eauto.
     intro; intros.
     apply H0.
     eapply rtc_l; try eassumption.
@@ -1872,24 +1995,29 @@ Qed.
 
 Lemma stmt_soundness Q f s ṡ:
   stmt_equiv s ṡ →
-  ∀ n k ḳ m ṁ,
+  ∀ n k ḳ m ṁ ẽ,
+  mem_equiv (mem_unlock_all m) ṁ →
+  env_equiv ẽ ê (locals k) →
   ch2o_safe_state Γ δ Q (State k (Stmt ↘ s) m) →
   (∀ n',
    n' ≤ n →
+   ∀ m' ṁ',
    ch2o_safe_state Γ δ Q (State k (Stmt ↗ s) m) →
-   compcertc_safe_state_n Q p n' (Csem.State f Sskip ḳ empty_env ṁ)) →
-  (∀ n' z ḳ',
+   mem_equiv (mem_unlock_all m') ṁ' →
+   compcertc_safe_state_n Q p n' (Csem.State f Sskip ḳ ẽ ṁ')) →
+  (∀ n',
    n' ≤ n →
+   ∀ z ḳ' m' ṁ',
    int_typed z (sintT: int_type K) →
    call_cont ḳ' = call_cont ḳ →
-   ch2o_safe_state Γ δ Q (State k (Stmt (⇈ (intV{sintT} z)) s) m) →
-   compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') empty_env ṁ)) →
-  compcertc_safe_state_n Q p n (Csem.State f ṡ ḳ empty_env ṁ).
+   mem_equiv (mem_unlock_all m') ṁ' →
+   ch2o_safe_state Γ δ Q (State k (Stmt (⇈ (intV{sintT} z)) s) m') →
+   compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') ẽ ṁ')) →
+  compcertc_safe_state_n Q p n (Csem.State f ṡ ḳ ẽ ṁ).
 Proof.
 (* TODO: When adding support for loops, we'll need to perform well-founded induction on n here as well. *)
-induction 1.
+induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
 - (* return *)
-  intros.
   intro; intros.
   inversion H3; clear H3; subst. {
     right.
@@ -1898,16 +2026,18 @@ induction 1.
     constructor.
   }
   inversion H4; clear H4; subst; inversion H3; clear H3; subst; try intuition discriminate.
-  eapply eval_soundness'; try eassumption. {
+  eapply eval_soundness_cast_int with (k:=CExpr (cast{sintT%T} e) CReturnE :: k); try eassumption. {
     intro; intros.
     eapply H0.
     eapply rtc_l; [|eassumption].
     apply cstep_expr with (E:=CReturnE).
   }
   intros.
-  eapply H2; try eassumption.
+  eapply H2 with (m':=mem_unlock Ω m); try eassumption.
   + lia.
   + reflexivity.
+  + Search mem_unlock.
+    rewrite mem_unlock_all_unlock. 
   + intro; intros.
     eapply H6.
     eapply rtc_l; [|eassumption].
