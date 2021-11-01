@@ -16,6 +16,8 @@ Notation tint := (Tint I32 Signed noattr).
 
 Inductive type_ := Int | Loc.
 
+Section Locals.
+
 Context (ê: list AST.ident).
 
 Inductive expr_equiv: expressions.expr K → Csyntax.expr → type_ → Prop :=
@@ -61,66 +63,6 @@ Inductive stmt_equiv: stmt K → statement → Prop :=
   expr_equiv e ė Int →
   stmt_equiv (! (cast{voidT%T} e)) (Sdo ė)
 .
-
-Inductive program_equiv: Prop :=
-| program_equiv_intro s ṡ b:
-  stringmap_lookup "main" δ = Some (Nat.iter (length ê) (λ s, local{sintT} s) s) →
-  Genv.init_mem p <> None →
-  let ge := globalenv p in
-  Genv.find_symbol ge p.(prog_main) = Some b →
-  let f := {|
-    fn_return:=type_int32s;
-    fn_callconv:=AST.cc_default;
-    fn_params:=nil;
-    fn_vars:=foldr (λ (x: AST.ident) xs, ((x, tint)::xs)) [] ê;
-    fn_body:=
-      Ssequence
-        ṡ 
-        (Sreturn (Some (Eval (Vint (Int.repr 0)) (Tint I32 Signed noattr))))
-  |} in
-  Genv.find_funct_ptr ge b = Some (Internal f) →
-  stmt_equiv s ṡ →
-  program_equiv.
-
-Definition globdef_is_fun{F V}(g: AST.globdef F V): bool :=
-  match g with
-    AST.Gfun _ => true
-  | AST.Gvar _ => false
-  end.
-
-Lemma init_mem_ok `{prog: Ctypes.program F}:
-  forallb (λ gd, globdef_is_fun (gd.2)) (AST.prog_defs prog) = true →
-  Genv.init_mem prog <> None.
-Proof.
-intros.
-unfold Genv.init_mem.
-assert (∀ gl ge m, (∀ g, In g gl → globdef_is_fun (snd g) = true) → Genv.alloc_globals (F:=Ctypes.fundef F) (V:=type) ge m gl <> None). {
-  induction gl; intros.
-  - simpl. intro; discriminate.
-  - simpl.
-    unfold Genv.alloc_global.
-    destruct a.
-    destruct g.
-    + case_eq (Memory.Mem.alloc m 0 1).
-      intros.
-      destruct (Memory.Mem.range_perm_drop_2 m0 b 0 1 Memtype.Nonempty).
-      * unfold Memory.Mem.range_perm.
-        intros.
-        apply Memory.Mem.perm_alloc_2 with (1:=H1) (2:=H2).
-      * rewrite e.
-        apply IHgl.
-        intros.
-        apply H0.
-        right.
-        assumption.
-    + lapply (H0 (i, AST.Gvar v)).
-      intros; discriminate. left.
-      reflexivity.
-}
-apply H0.
-rewrite -> (List.forallb_forall (A:=AST.ident * AST.globdef (Ctypes.fundef F) type)) in H.
-apply H.
-Qed.
 
 Lemma int_typed_limits z:
   int_typed z (sintT%IT: int_type K) →
@@ -2238,6 +2180,105 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
     eassumption.
 Qed.
 
+End Locals.
+
+Inductive program_equiv: Prop :=
+| program_equiv_intro ê s ṡ b:
+  stringmap_lookup "main" δ = Some (Nat.iter (length ê) (λ s, local{sintT} s) s) →
+  Genv.init_mem p <> None →
+  let ge := globalenv p in
+  Genv.find_symbol ge p.(prog_main) = Some b →
+  let f := {|
+    fn_return:=type_int32s;
+    fn_callconv:=AST.cc_default;
+    fn_params:=nil;
+    fn_vars:=rev (map (λ x, (x, tint)) ê);
+    fn_body:=
+      Ssequence
+        ṡ 
+        (Sreturn (Some (Eval (Vint (Int.repr 0)) (Tint I32 Signed noattr))))
+  |} in
+  Coqlib.list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) →
+  Genv.find_funct_ptr ge b = Some (Internal f) →
+  stmt_equiv ê s ṡ →
+  program_equiv.
+
+Definition globdef_is_fun{F V}(g: AST.globdef F V): bool :=
+  match g with
+    AST.Gfun _ => true
+  | AST.Gvar _ => false
+  end.
+
+Lemma init_mem_ok `{prog: Ctypes.program F}:
+  forallb (λ gd, globdef_is_fun (gd.2)) (AST.prog_defs prog) = true →
+  Genv.init_mem prog <> None.
+Proof.
+intros.
+unfold Genv.init_mem.
+assert (∀ gl ge m, (∀ g, In g gl → globdef_is_fun (snd g) = true) → Genv.alloc_globals (F:=Ctypes.fundef F) (V:=type) ge m gl <> None). {
+  induction gl; intros.
+  - simpl. intro; discriminate.
+  - simpl.
+    unfold Genv.alloc_global.
+    destruct a.
+    destruct g.
+    + case_eq (Memory.Mem.alloc m 0 1).
+      intros.
+      destruct (Memory.Mem.range_perm_drop_2 m0 b 0 1 Memtype.Nonempty).
+      * unfold Memory.Mem.range_perm.
+        intros.
+        apply Memory.Mem.perm_alloc_2 with (1:=H1) (2:=H2).
+      * rewrite e.
+        apply IHgl.
+        intros.
+        apply H0.
+        right.
+        assumption.
+    + lapply (H0 (i, AST.Gvar v)).
+      intros; discriminate. left.
+      reflexivity.
+}
+apply H0.
+rewrite -> (List.forallb_forall (A:=AST.ident * AST.globdef (Ctypes.fundef F) type)) in H.
+apply H.
+Qed.
+
+Lemma alloc_variables_not_stuck ṁ ẽ xs:
+  ∃ ẽ' ṁ', alloc_variables (globalenv p) ẽ ṁ xs ẽ' ṁ'.
+Proof.
+  revert ẽ ṁ.
+  induction xs; intros.
+  - eexists; eexists; constructor.
+  - destruct a as [x τ].
+    case_eq (Memory.Mem.alloc ṁ 0 (sizeof (globalenv p) τ)); intros ṁ' b ?.
+    destruct (IHxs (Maps.PTree.set x (b, τ) ẽ) ṁ') as [ẽ'' [ṁ'' ?]].
+    eexists; eexists; econstructor; eassumption.
+Qed.
+
+Lemma alloc_variables_app:
+  ∀ xs ẽ ṁ ys ẽ' ṁ',
+  alloc_variables (globalenv p) ẽ ṁ (xs ++ ys)%list ẽ' ṁ' →
+  ∃ ẽ'' ṁ'', alloc_variables (globalenv p) ẽ ṁ xs ẽ'' ṁ'' /\ alloc_variables (globalenv p) ẽ'' ṁ'' ys ẽ' ṁ'.
+Proof.
+  induction xs; intros.
+  - eexists; eexists.
+    split. constructor. assumption.
+  - destruct a as [x τ].
+    inversion H; clear H; subst.
+    rename m1 into ṁ'''.
+    rename b1 into b.
+    destruct (IHxs _ _ _ _ _ H8) as [ẽ'' [ṁ'' [? ?]]].
+    eexists; eexists; split.
+    + econstructor; eassumption.
+    + eassumption.
+Qed.
+
+(*
+Lemma alloc_variables_soundness :
+  alloc_variables (globalenv p) ṁ ẽ (foldr (λ x xs, ((x, tint)::xs)) [] ê) ṁ' ẽ' →
+  mem_equiv ṁ' env_equiv
+*)
+
 Theorem soundness Q:
   program_equiv →
   ch2o_safe_program Γ δ Q →
@@ -2245,39 +2286,43 @@ Theorem soundness Q:
 Proof.
 intros Hequiv Hch2o.
 destruct Hequiv.
-case_eq (Genv.init_mem p); intros; try tauto. clear H0; rename H4 into H0.
+case_eq (Genv.init_mem p). 2:{ intros; tauto. }
+intros ṁ ?. clear H0; rename H4 into H0.
 econstructor. { econstructor; try eassumption. reflexivity. }
 intro n; intro; intros.
 (* Callstate *)
 inversion H4; clear H4; subst. {
   right.
+  edestruct alloc_variables_not_stuck as [? [? ?]].
   eexists.
   eexists.
   right.
   eapply step_internal_function. {
-    constructor.
+    assumption.
+  } {
+    eassumption.
   } {
     constructor.
-  } {
-    constructor.
-  }    
+  }
 }
-inversion H5; clear H5; subst; inversion H4; clear H4; subst.
-clear H1 H2 H12 H14.
-inversion H13; clear H13; subst.
-simpl in H6.
+inversion H6; clear H6; subst; inversion H4; clear H4; subst.
+inversion H15; clear H15; subst.
+rename m2 into ṁ1.
+rename e into ẽ.
+simpl in H7.
 (* Ssequence *)
-inversion H6 ; clear H6; subst. {
+inversion H7; clear H7; subst. {
   right.
   eexists.
   eexists.
   right.
   constructor.
 }
-inversion H1; clear H1; subst; inversion H4; clear H4; subst.
-rename H2 into H6.
+inversion H4; clear H4; subst; inversion H7; clear H7; subst.
 (* Executing the body *)
 eapply stmt_soundness; try eassumption. {
+  
+} {
   intro; intros.
   destruct (Hch2o S'); try tauto.
   apply rtc_transitive with (2:=H1).
