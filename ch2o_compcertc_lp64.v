@@ -2078,7 +2078,7 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
     constructor.
   }
   inversion H6; clear H6; subst; inversion H5; clear H5; subst; try intuition discriminate.
-  eapply eval_soundness; try eassumption. {
+  eapply eval_soundness with (k:=CExpr e (CIfE s1 s2) :: k); try eassumption. {
     intro; intros.
     eapply H2.
     eapply rtc_l; [|eassumption].
@@ -2086,94 +2086,109 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
   }
   intros.
   intro; intros.
-  inversion H9; clear H9; subst. {
+  inversion H10; clear H10; subst. {
     right.
-    eexists; eexists.
-    right.
-    constructor.
-    unfold bool_val.
-    simpl.
-    reflexivity.
+    inversion H8; clear H8; subst.
+    - eexists; eexists.
+      right.
+      eapply step_ifthenelse_2.
+      unfold bool_val.
+      simpl.
+      reflexivity.
+    - edestruct H6.
+      + eapply rtc_l.
+        * apply cstep_expr_if_indet.
+          intro.
+          inversion H8.
+        * apply rtc_refl.
+      + inversion H8.
+      + destruct H8.
+        inversion H8.
   }
-  inversion H10; clear H10; subst; inversion H9; clear H9; subst. {
-    inversion H19; clear H19; subst; try discriminate.
+  inversion H11; clear H11; subst; inversion H10; clear H10; subst. {
+    inversion H8; subst; inversion H20; clear H20; subst; try discriminate.
   } {
-    inversion H19; clear H19; subst; try discriminate.
-    subst.
-    inversion H18; clear H18; subst.
+    inversion H8; subst; inversion H20; clear H20; subst; try discriminate;
+    subst;
+    inversion H19; clear H19; subst.
   } {
-    inversion H19; clear H19; subst; try discriminate.
-    subst.
-    inversion H18; clear H18; subst.
+    inversion H8; subst; inversion H20; clear H20; subst; try discriminate;
+    subst;
+    inversion H19; clear H19; subst.
   } {
-    inversion H18; clear H18; subst; try discriminate.
-    subst.
-    elim H19; constructor.
+    inversion H8; subst; inversion H19; clear H19; subst; try discriminate;
+    subst;
+    elim H20; constructor.
   }
+  inversion H8; subst; try discriminate.
   unfold bool_val in H21.
   simpl in H21.
   injection H21; clear H21; intros; subst.
-  rewrite Int.eq_signed in H11.
-  rewrite Int.signed_repr in H11. 2:{
+  rewrite Int.eq_signed in H12.
+  rewrite Int.signed_repr in H12. 2:{
     apply int_typed_limits; assumption.
   }
-  rewrite Int.signed_zero in H11.
-  destruct (Coqlib.zeq z 0); simpl in H11.
+  rewrite Int.signed_zero in H12.
+  destruct (Coqlib.zeq z 0); simpl in H12.
   + (* z = 0 *)
     subst.
-    eapply IHstmt_equiv2; try eassumption. {
+    eapply IHstmt_equiv2. 6:{ eassumption. } 3:{
       intro; intros.
-      eapply H8.
+      eapply H6.
       eapply rtc_l; [|eassumption].
-      constructor.
+      apply cstep_expr_if_false.
       - simpl. constructor.
       - constructor.
+    } {
+      rewrite mem_unlock_all_mem_unlock; eassumption.
+    } {
+      eassumption.
     } 2:{
       intros.
       eapply H4; try eassumption.
       - lia.
       - intro; intros.
-        eapply H13.
+        eapply H16.
         eapply rtc_l; [|eassumption].
-        rewrite mem_unlock_empty.
         constructor.
     }
     intros.
-    rewrite mem_unlock_empty in H10.
-    intro; intros.
     eapply H3; try eassumption.
     * lia.
     * intro; intros.
-      eapply H10.
+      eapply H13.
       eapply rtc_l; [|eassumption].
       constructor.
   + (* z ≠ 0 *)
-    eapply IHstmt_equiv1; try eassumption. {
+    eapply IHstmt_equiv1. 6:{ eassumption. } 3:{
       intro; intros.
-      eapply H8.
+      eapply H6.
       eapply rtc_l; [|eassumption].
       constructor.
       - constructor.
       - intro.
         elim n1.
-        inversion H10; clear H10; subst.
+        inversion H13; clear H13; subst.
         reflexivity.
+    } {
+      rewrite mem_unlock_all_mem_unlock.
+      eassumption.
+    } {
+      eassumption.
     } 2:{
       intros.
       eapply H4; try eassumption.
       - lia.
       - intro; intros.
-        eapply H13.
+        eapply H16.
         eapply rtc_l; [|eassumption].
-        rewrite mem_unlock_empty.
         constructor.
     }
     intros.
-    rewrite mem_unlock_empty in H10.
     eapply H3; try eassumption.
     * lia.
     * intro; intros.
-      eapply H10.
+      eapply H13.
       eapply rtc_l; [|eassumption].
       constructor.
 Qed.
