@@ -1850,10 +1850,10 @@ Lemma eval_soundness_cast_void Q n e ė k ḳ m ṁ ẽ f:
   ch2o_safe_state Γ δ Q (State k (Expr (cast{voidT%T} e)) m) →
   (∀ n',
    n' ≤ n →
-   ∀ Ω ν v ty m' ṁ',
-   ch2o_safe_state Γ δ Q (State k (Expr (%#{ Ω } ν)) m') →
+   ∀ Ω v ṿ ty m' ṁ',
+   ch2o_safe_state Γ δ Q (State k (Expr (#{ Ω } v)) m') →
    mem_equiv (mem_unlock_all m') ṁ' →
-   compcertc_safe_state_n Q p n' (ExprState f (Eval v ty) ḳ ẽ ṁ')) →
+   compcertc_safe_state_n Q p n' (ExprState f (Eval ṿ ty) ḳ ẽ ṁ')) →
   compcertc_safe_state_n Q p n (ExprState f ė ḳ ẽ ṁ).
 Proof.
 revert e ė m ṁ.
@@ -2191,6 +2191,51 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
       eapply H13.
       eapply rtc_l; [|eassumption].
       constructor.
+- intro; intros.
+  inversion H3; clear H3; subst. {
+    right.
+    eexists; eexists; right.
+    constructor.
+  }
+  inversion H4; clear H4; subst; inversion H3; clear H3; subst; try destruct H12; try discriminate.
+  eapply eval_soundness_cast_void with (k:=CExpr (cast{voidT%T} e) CDoE :: k). eassumption. eassumption. 4:{ eassumption. } 2:{
+    intro; intros.
+    eapply H0.
+    eapply rtc_l.
+    - eapply cstep_expr with (E:=CDoE).
+    - eassumption.
+  } { eassumption. }
+  intros.
+  intro; intros.
+  inversion H7; clear H7; subst. {
+    right.
+    eexists; eexists; right.
+    constructor.
+  }
+  inversion H8; clear H8; subst; inversion H7; clear H7; subst; try discriminate. {
+    inversion H17; clear H17; subst; try discriminate.
+  } {
+    inversion H17; clear H17; subst; try discriminate; subst.
+    inversion H16; clear H16; subst.
+  } {
+    inversion H17; clear H17; subst; try discriminate.
+    subst.
+    inversion H16.
+  } {
+    inversion H16; clear H16; subst; try discriminate.
+    subst.
+    elim H17.
+    constructor.
+  }
+  eapply H1. 4:{ eassumption. }
+  + lia.
+  + intro; intros.
+    eapply H4; try eassumption.
+    eapply rtc_l.
+    * constructor.
+    * eassumption.
+  + rewrite mem_unlock_all_mem_unlock.
+    eassumption.
 Qed.
 
 Theorem soundness Q:
