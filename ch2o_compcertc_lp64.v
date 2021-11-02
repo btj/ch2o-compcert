@@ -2190,13 +2190,9 @@ Lemma alloc_variables_soundness Q f ê ê' s ṡ:
   env_equiv ẽ0 ê (locals k) →
   alloc_variables (globalenv p) ẽ0 ṁ0 (map (λ x, (x, tint)) ê') ẽ ṁ →
   ch2o_safe_state Γ δ Q (State k (Stmt ↘ (Nat.iter (length ê') (λ s, local{sintT} s) s)) m) →
-  (∀ n',
-   n' ≤ n →
-   ∀ m' ṁ'0 ṁ',
-   ch2o_safe_state Γ δ Q (State k (Stmt ↗ (Nat.iter (length ê) (λ s, local{sintT} s) s)) m') →
-   Memory.Mem.free_list ṁ'0 (map (λ x, match Maps.PTree.get x ẽ with None => (1%positive, 0%Z, 0%Z) | Some (b, τ) => (b, 0%Z, sizeof (globalenv p) τ) end) ê') = Some ṁ' →
-   mem_equiv (mem_unlock_all m') ṁ' →
-   compcertc_safe_state_n Q p n' (Csem.State f Sskip ḳ ẽ ṁ'0)) →
+  (∀ m',
+   ch2o_safe_state Γ δ Q (State k (Stmt ↗ (Nat.iter (length ê') (λ s, local{sintT} s) s)) m') →
+   False) →
   (∀ n',
    n' ≤ n →
    ∀ z ḳ' m' ṁ'0 ṁ',
@@ -2204,11 +2200,34 @@ Lemma alloc_variables_soundness Q f ê ê' s ṡ:
    call_cont ḳ' = call_cont ḳ →
    Memory.Mem.free_list ṁ'0 (map (λ x, match Maps.PTree.get x ẽ with None => (1%positive, 0%Z, 0%Z) | Some (b, τ) => (b, 0%Z, sizeof (globalenv p) τ) end) ê') = Some ṁ' →
    mem_equiv (mem_unlock_all m') ṁ' →
-   ch2o_safe_state Γ δ Q (State k (Stmt (⇈ (intV{sintT} z)) (Nat.iter (length ê) (λ s, local{sintT} s) s)) m') →
+   ch2o_safe_state Γ δ Q (State k (Stmt (⇈ (intV{sintT} z)) (Nat.iter (length ê') (λ s, local{sintT} s) s)) m') →
    compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') ẽ ṁ'0)) →
   compcertc_safe_state_n Q p n
     (Csem.State f (Ssequence ṡ (Sreturn (Some (Eval (Vint (Int.repr 0)) tint)))) ḳ ẽ ṁ).
-
+Proof.
+  revert ê' ê.
+  induction ê'; intros.
+  - intro; intros.
+    inversion H7; clear H7; subst. {
+      right.
+      eexists; eexists.
+      right.
+      constructor.
+    }
+    inversion H8; clear H8; subst; inversion H7; clear H7; subst; try (destruct H16); try discriminate.
+    inversion H3; clear H3; subst.
+    eapply stmt_soundness. 7:{ eassumption. } eassumption. eassumption. {
+      rewrite app_nil_r. eassumption.
+    } eassumption. 2:{
+      intros.
+      eapply H6. lia. assumption. assumption. reflexivity. eassumption.
+      assumption.
+    }
+    intros.
+    (* Ssequence *)
+    apply H5 in H7.
+    tauto.
+  - 
 
 Inductive program_equiv: Prop :=
 | program_equiv_intro ê s ṡ b:
