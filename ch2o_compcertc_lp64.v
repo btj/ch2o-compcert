@@ -2227,8 +2227,117 @@ Proof.
     (* Ssequence *)
     apply H5 in H7.
     tauto.
-  - 
+  - rename a into x.
+    simpl in H3.
+    inversion H3; clear H3; subst.
+    rename m1 into ṁ0'.
+    eapply IHê' with (ê:=(ê ++ [x])%list). {
+     rewrite <- app_assoc. assumption.
+    } {
+      rewrite <- app_assoc. assumption.
+    } 3:{
+      eassumption.
+    } 3:{
+      intro; intros.
+      eapply H4.
+      eapply rtc_l; [|eassumption].
+      apply cstep_in_block with (o:=Npos b1).
+      - constructor.
+      - destruct H1.
+        rewrite <- dom_mem_unlock_all.
+        apply domains_equiv0.
+        rewrite Memory.Mem.alloc_result with (1:=H14).
+        lia.
+    } {
+      split.
+      - intros.
+        destruct (classic (b = b1)).
+        + subst.
+          apply block_equiv_alloced with (oz:=None).
+          * apply Memory.Mem.load_alloc_same' with (1:=H14).
+            -- reflexivity.
+            -- reflexivity.
+            -- simpl.
+               apply Z.divide_0_r.
+          * intros.
+            lapply (Memory.Mem.valid_access_store ṁ0' AST.Mint32 b1 0%Z (Vint (Int.repr z'))). 2:{
+              eapply Memory.Mem.valid_access_implies.
+              apply Memory.Mem.valid_access_alloc_same with (1:=H14).
+              -- reflexivity.
+              -- reflexivity.
+              -- simpl; apply Z.divide_0_r.
+              -- constructor.
+            }
+            intros.
+            destruct X.
+            simpl.
+            assert (Ptrofs.unsigned Ptrofs.zero = 0%Z). reflexivity.
+            rewrite H3.
+            congruence.
+          * destruct (Memory.Mem.range_perm_free ṁ0' b1 0 4). 2:{ congruence. }
+            intro; intros.
+            apply Memory.Mem.perm_alloc_2 with (1:=H14).
+            assumption.
+          * rewrite memenv_of_mem_unlock_all.
+            apply mem_alloc_new_index_alive'.
+            -- assumption.
+            -- constructor.
+               constructor.
+          * rewrite memenv_of_mem_unlock_all.
+            constructor.
+            -- eapply mem_alloc_index_typed'.
+               ++ assumption.
+               ++ apply val_new_typed.
+                  ** assumption.
+                  ** constructor.
+                     constructor.
+            -- constructor; constructor.
+            -- constructor.
+            -- reflexivity.
+            -- simpl.
+               lia.
+            -- apply Nat.divide_0_r.
+            -- constructor.
+          * erewrite mem_unlock_all_lookup. reflexivity.
+            erewrite mem_lookup_alloc; try eassumption.
+            -- reflexivity.
+            -- apply val_new_typed.
+               ++ assumption.
+               ++ constructor; constructor.
+            -- constructor.
+          * apply mem_writable_unlock_all.
+            eapply mem_alloc_writable_top.
+            -- assumption.
+            -- apply val_new_typed.
+               ++ assumption.
+               ++ constructor; constructor.
+            -- constructor.
+          * constructor.
+        + destruct H1.
+          destruct (blocks_equiv0 b).
+          * apply block_equiv_not_alloced.
+            rewrite memenv_of_mem_unlock_all.
+            intro.
+            elim H1.
+            erewrite mem_alloc_memenv_of in H7.
+            -- eapply mem_alloc_index_alive_inv. 2:{ rewrite memenv_of_mem_unlock_all. eassumption. }
+               congruence.
+            -- assumption.
+            -- apply val_new_typed.
+               ++ assumption.
+               ++ constructor; constructor.
+          * apply block_equiv_alloced with (oz:=oz).
+            -- apply Memory.Mem.load_alloc_other with (1:=H14) (2:=H1).
+            -- intros.
+               destruct (Memory.Mem.valid_access_store ṁ0' AST.Mint32 b (Ptrofs.unsigned Ptrofs.zero) (Vint (Int.repr z'))). 2:{
+                 unfold Memory.Mem.storev. congruence.
+               }
+               apply Memory.Mem.valid_access_alloc_other with (1:=H14).
 
+               apply Memory.Mem.store_valid_access_3 with (1:=H7 0%Z).
+    }
+            
+    
 Inductive program_equiv: Prop :=
 | program_equiv_intro ê s ṡ b:
   stringmap_lookup "main" δ = Some (Nat.iter (length ê) (λ s, local{sintT} s) s) →
