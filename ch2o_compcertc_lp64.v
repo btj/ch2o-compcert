@@ -824,7 +824,8 @@ Lemma lrred_safe e ė θ:
   e = subst E e1 ∧
   Γ \ ρ ⊢ₕ e1, m ⇒ e2, m' ∧
   expr_equiv (subst E e2) (C a') θ ∧
-  mem_equiv (mem_unlock_all m') ṁ'.
+  mem_equiv (mem_unlock_all m') ṁ' ∧
+  '{m'} = '{m}.
 Proof.
 induction 1; intros.
 - inversion H0; clear H0; subst; try discriminate.
@@ -1026,7 +1027,7 @@ induction 1; intros.
       constructor.
       assumption.
     }
-    assumption.
+    split. assumption. reflexivity.
   + injection H2; clear H2; intros; subst.
     destruct (IHexpr_equiv1 C0 K_ RV a ẽ ṁ t a' ṁ' ρ m H4) as [E [e5 [e6 [m' [? [? ?]]]]]]; try trivial. {
       intros; subst.
@@ -1096,7 +1097,7 @@ induction 1; intros.
   split. {
     constructor.
   }
-  assumption.
+  split. assumption. reflexivity.
 - (* loc *)
   inversion H; clear H; subst; try discriminate.
   subst.
@@ -1147,7 +1148,7 @@ induction 1; intros.
       destruct oz; constructor.
       assumption.
     }
-    assumption.
+    split. assumption. reflexivity.
   + injection H1; clear H1; intros; subst.
     destruct (IHexpr_equiv _ _ _ _ _ _ _ _ _ _ _ H5 eq_refl H2 H3 H4) as [E [e1 [e2 [m' [? [? [? ?]]]]]]]. {
       intros; subst.
@@ -1205,7 +1206,17 @@ induction 1; intros.
       apply mem_writable_unlock_all in H3.
       eapply mem_writable_alive with (Δ:='{mem_unlock_all m}) in H3; try eassumption.
       destruct (blocks_equiv0 b); try tauto.
-      eapply mem_equiv_insert; try eassumption.
+      split. {
+        eapply mem_equiv_insert; try eassumption.
+      }
+      rewrite <- memenv_of_mem_unlock_all.
+      rewrite mem_unlock_all_mem_lock.
+      rewrite mem_unlock_all_mem_insert.
+      rewrite <- memenv_of_mem_unlock_all with (m:=m).
+      eapply mem_insert_memenv_of; try eassumption.
+      constructor.
+      constructor.
+      assumption.
     * lapply (Hsafe [] _ eq_refl). 2:{ repeat constructor. }
       intros.
       inversion H; clear H; subst.
@@ -1581,10 +1592,12 @@ Lemma eval_soundness Q n e ė k ḳ m ṁ ẽ f:
   expr_equiv e ė Int →
   mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê (locals k) →
+  ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m} (iτ.1)) (locals k)),
   ch2o_safe_state Γ δ Q (State k (Expr e) m) →
   (∀ n',
    n' ≤ n →
    ∀ Ω ν v m' ṁ',
+   ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m'} (iτ.1)) (locals k)),
    ch2o_safe_state Γ δ Q (State k (Expr (%#{ Ω } ν)) m') →
    expr_equiv (%#{ Ω } ν) v Int →
    mem_equiv (mem_unlock_all m') ṁ' →
@@ -1614,11 +1627,11 @@ inversion HstarN; subst.
 - case_eq (match ė with Eval _ _ => true | _ => false end); intros. {
     inversion H; clear H; subst; try discriminate.
     - unfold compcertc_safe_state_n in H1.
-      eapply H1 with (n':=S n0) (5:=HstarN); try eauto.
+      eapply H1 with (n':=S n0) (6:=HstarN); try eauto.
       constructor.
       assumption.
     - unfold compcertc_safe_state_n in H1.
-      eapply H1 with (n':=S n0) (5:=HstarN); try eauto.
+      eapply H1 with (n':=S n0) (6:=HstarN); try eauto.
       constructor.
   }
   destruct H2. 2:{
@@ -1627,14 +1640,15 @@ inversion HstarN; subst.
   inversion H2; clear H2; subst.
   + (* step_Lred *)
     rename m' into ṁ'.
-    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' Hṁ']]]]]]]; try (eassumption || reflexivity). {
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' [Hṁ' Hlocals_alive']]]]]]]]; try (eassumption || reflexivity). {
       apply lrred_lred.
       eassumption.
     } { apply ch2o_safe_state_subexpr_safe with (1:=H0). }
     unfold compcertc_safe_state_n in IH.
     subst.
-    eapply IH with (2:=Hee') (7:=H3); try eassumption.
+    eapply IH with (2:=Hee') (8:=H3); try eassumption.
     * lia.
+    * rewrite Hlocals_alive'; assumption.
     * intro S'.
       intro HS'.
       apply H0.
@@ -1645,13 +1659,14 @@ inversion HstarN; subst.
       apply (H1 n'); lia.
   + (* step_rred *)
     rename m' into ṁ'.
-    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' Hṁ']]]]]]]; try (eassumption || reflexivity). {
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' [Hṁ' Hlocals_alive']]]]]]]]; try (eassumption || reflexivity). {
       apply lrred_rred; eassumption.
     } { apply ch2o_safe_state_subexpr_safe with (1:=H0). }
     unfold compcertc_safe_state_n in IH.
     subst.
-    eapply IH with (2:=Hee') (7:=H3); try eassumption.
+    eapply IH with (2:=Hee') (8:=H3); try eassumption.
     * lia.
+    * rewrite Hlocals_alive'; assumption.
     * intro S'.
       intro HS'.
       apply H0.
@@ -1672,11 +1687,13 @@ Lemma eval_soundness_cast_int Q n e ė k ḳ m ṁ ẽ f:
   expr_equiv e ė Int →
   mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê (locals k) →
+  ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m} (iτ.1)) (locals k)),
   ch2o_safe_state Γ δ Q (State k (Expr (cast{sintT%T} e)) m) →
   (∀ n',
    n' ≤ n →
    ∀ Ω z m' ṁ',
    int_typed z (sintT: int_type K) →
+   ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m'} (iτ.1)) (locals k)),
    ch2o_safe_state Γ δ Q (State k (Expr (#{ Ω } (intV{sintT} z))) m') →
    mem_equiv (mem_unlock_all m') ṁ' →
    compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) ḳ ẽ ṁ')) →
@@ -1718,7 +1735,7 @@ inversion HstarN; subst.
   inversion H2; clear H2; subst.
   + (* step_Lred *)
     rename m' into ṁ'.
-    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' Hṁ']]]]]]]; try (eassumption || reflexivity). {
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' [Hṁ' Hlocals_alive']]]]]]]]; try (eassumption || reflexivity). {
       apply lrred_lred.
       eassumption.
     } {
@@ -1729,8 +1746,9 @@ inversion HstarN; subst.
     }
     unfold compcertc_safe_state_n in IH.
     subst.
-    eapply IH with (2:=Hee') (7:=H3); try eassumption.
+    eapply IH with (2:=Hee') (8:=H3); try eassumption.
     * lia.
+    * rewrite Hlocals_alive'; assumption.
     * intro S'.
       intro HS'.
       apply H0.
@@ -1746,7 +1764,7 @@ inversion HstarN; subst.
       apply (H1 n'); lia.
   + (* step_rred *)
     rename m' into ṁ'.
-    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' Hṁ']]]]]]]; try (eassumption || reflexivity). {
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' [Hṁ' Hlocals_alive']]]]]]]]; try (eassumption || reflexivity). {
       apply lrred_rred; eassumption.
     } { 
       intros; subst.
@@ -1755,8 +1773,9 @@ inversion HstarN; subst.
     }
     unfold compcertc_safe_state_n in IH.
     subst.
-    eapply IH with (2:=Hee') (7:=H3); try eassumption.
+    eapply IH with (2:=Hee') (8:=H3); try eassumption.
     * lia.
+    * rewrite Hlocals_alive'; assumption.
     * intro S'.
       intro HS'.
       apply H0.
@@ -1784,10 +1803,12 @@ Lemma eval_soundness_cast_void Q n e ė k ḳ m ṁ ẽ f:
   expr_equiv e ė Int →
   mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê (locals k) →
+  ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m} (iτ.1)) (locals k)),
   ch2o_safe_state Γ δ Q (State k (Expr (cast{voidT%T} e)) m) →
   (∀ n',
    n' ≤ n →
    ∀ Ω v ṿ ty m' ṁ',
+   ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m'} (iτ.1)) (locals k)),
    ch2o_safe_state Γ δ Q (State k (Expr (#{ Ω } v)) m') →
    mem_equiv (mem_unlock_all m') ṁ' →
    compcertc_safe_state_n Q p n' (ExprState f (Eval ṿ ty) ḳ ẽ ṁ')) →
@@ -1828,7 +1849,7 @@ inversion HstarN; subst.
   inversion H2; clear H2; subst.
   + (* step_Lred *)
     rename m' into ṁ'.
-    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' Hṁ']]]]]]]; try (eassumption || reflexivity). {
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' [Hṁ' Hlocals_alive']]]]]]]]; try (eassumption || reflexivity). {
       apply lrred_lred.
       eassumption.
     } {
@@ -1839,8 +1860,9 @@ inversion HstarN; subst.
     }
     unfold compcertc_safe_state_n in IH.
     subst.
-    eapply IH with (2:=Hee') (7:=H3); try eassumption.
+    eapply IH with (2:=Hee') (8:=H3); try eassumption.
     * lia.
+    * rewrite Hlocals_alive'; assumption.
     * intro S'.
       intro HS'.
       apply H0.
@@ -1856,7 +1878,7 @@ inversion HstarN; subst.
       apply (H1 n'); lia.
   + (* step_rred *)
     rename m' into ṁ'.
-    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' Hṁ']]]]]]]; try (eassumption || reflexivity). {
+    edestruct (lrred_safe _ _ _ H) as [E [e1 [e2 [m' [He1 [He1e2 [Hee' [Hṁ' Hlocals_alive']]]]]]]]; try (eassumption || reflexivity). {
       apply lrred_rred; eassumption.
     } { 
       intros; subst.
@@ -1865,8 +1887,9 @@ inversion HstarN; subst.
     }
     unfold compcertc_safe_state_n in IH.
     subst.
-    eapply IH with (2:=Hee') (7:=H3); try eassumption.
+    eapply IH with (2:=Hee') (8:=H3); try eassumption.
     * lia.
+    * rewrite Hlocals_alive'; assumption.
     * intro S'.
       intro HS'.
       apply H0.
@@ -1895,10 +1918,12 @@ Lemma stmt_soundness Q f s ṡ:
   ∀ n k ḳ m ṁ ẽ,
   mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê (locals k) →
+  ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m} (iτ.1)) (locals k)),
   ch2o_safe_state Γ δ Q (State k (Stmt ↘ s) m) →
   (∀ n',
    n' ≤ n →
    ∀ m' ṁ',
+   ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m'} (iτ.1)) (locals k)),
    ch2o_safe_state Γ δ Q (State k (Stmt ↗ s) m') →
    mem_equiv (mem_unlock_all m') ṁ' →
    compcertc_safe_state_n Q p n' (Csem.State f Sskip ḳ ẽ ṁ')) →
@@ -1908,6 +1933,7 @@ Lemma stmt_soundness Q f s ṡ:
    int_typed z (sintT: int_type K) →
    call_cont ḳ' = call_cont ḳ →
    mem_equiv (mem_unlock_all m') ṁ' →
+   ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m'} (iτ.1)) (locals k)),
    ch2o_safe_state Γ δ Q (State k (Stmt (⇈ (intV{sintT} z)) s) m') →
    compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') ẽ ṁ')) →
   compcertc_safe_state_n Q p n (Csem.State f ṡ ḳ ẽ ṁ).
@@ -1935,6 +1961,8 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
   + reflexivity.
   + rewrite mem_unlock_all_mem_unlock.
     eassumption.
+  + rewrite mem_unlock_memenv_of.
+    assumption.
   + intro; intros.
     eapply H6.
     eapply rtc_l; [|eassumption].
@@ -1957,12 +1985,12 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
     constructor.
   }
   inversion H5; clear H5; subst; inversion H4; clear H4; subst; try intuition discriminate.
-  eapply IHstmt_equiv1 with (n:=n0) (ḳ:=Kseq ṡ2 ḳ). 3:{
+  eapply IHstmt_equiv1 with (n:=n0) (ḳ:=Kseq ṡ2 ḳ). 4:{
     intro; intros.
     eapply H1.
     eapply rtc_l; [|eassumption].
     constructor.
-  } { eassumption. } { eassumption. } 2:{
+  } { eassumption. } { eassumption. } { eassumption. } 2:{
     intros.
     eapply H3; try eassumption. { lia. }
     intro; intros.
@@ -1983,12 +2011,12 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
   inversion H9; clear H9; subst; inversion H8; clear H8; subst. 2:{
     inversion H16.
   }
-  eapply IHstmt_equiv2. 3:{
+  eapply IHstmt_equiv2. 4:{
     intro; intros.
     eapply H5.
     eapply rtc_l; [|eassumption].
     constructor.
-  } { eassumption. } { eassumption. } 3:{ eassumption. } 2:{
+  } { eassumption. } { eassumption. } { eassumption. } 3:{ eassumption. } 2:{
     intros.
     intro; intros.
     eapply H3; try eassumption.
@@ -2069,7 +2097,7 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
   destruct (Coqlib.zeq z 0); simpl in H12.
   + (* z = 0 *)
     subst.
-    eapply IHstmt_equiv2. 6:{ eassumption. } 3:{
+    eapply IHstmt_equiv2. 7:{ eassumption. } 4:{
       intro; intros.
       eapply H6.
       eapply rtc_l; [|eassumption].
@@ -2080,6 +2108,9 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
       rewrite mem_unlock_all_mem_unlock; eassumption.
     } {
       eassumption.
+    } {
+      rewrite mem_unlock_memenv_of.
+      assumption.
     } 2:{
       intros.
       eapply H4; try eassumption.
@@ -2097,7 +2128,7 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
       eapply rtc_l; [|eassumption].
       constructor.
   + (* z ≠ 0 *)
-    eapply IHstmt_equiv1. 6:{ eassumption. } 3:{
+    eapply IHstmt_equiv1. 7:{ eassumption. } 4:{
       intro; intros.
       eapply H6.
       eapply rtc_l; [|eassumption].
@@ -2112,6 +2143,8 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
       eassumption.
     } {
       eassumption.
+    } {
+      rewrite mem_unlock_memenv_of; assumption.
     } 2:{
       intros.
       eapply H4; try eassumption.
@@ -2135,13 +2168,13 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
     constructor.
   }
   inversion H4; clear H4; subst; inversion H3; clear H3; subst; try destruct H12; try discriminate.
-  eapply eval_soundness_cast_void with (k:=CExpr (cast{voidT%T} e) CDoE :: k). eassumption. eassumption. 4:{ eassumption. } 2:{
+  eapply eval_soundness_cast_void with (k:=CExpr (cast{voidT%T} e) CDoE :: k). eassumption. eassumption. 5:{ eassumption. } 3:{
     intro; intros.
     eapply H0.
     eapply rtc_l.
     - eapply cstep_expr with (E:=CDoE).
     - eassumption.
-  } { eassumption. }
+  } { eassumption. } { eassumption. }
   intros.
   intro; intros.
   inversion H7; clear H7; subst. {
@@ -2164,15 +2197,19 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
     elim H17.
     constructor.
   }
-  eapply H1. 4:{ eassumption. }
-  + lia.
-  + intro; intros.
+  eapply H1. 5:{
+    eassumption.
+  } { lia. } 2:{
+    intro; intros.
     eapply H4; try eassumption.
     eapply rtc_l.
     * constructor.
     * eassumption.
-  + rewrite mem_unlock_all_mem_unlock.
-    eassumption.
+  } {
+    rewrite mem_unlock_memenv_of; assumption.
+  }
+  rewrite mem_unlock_all_mem_unlock.
+  eassumption.
 Qed.
 
 End Locals.
@@ -2513,9 +2550,7 @@ Proof.
         - simpl.
           rewrite H8. 2:{ apply in_or_app; right. left. reflexivity. }
           rewrite Maps.PTree.gss.
-          edestruct H11. { apply rtc_refl. } { inversion H12. }
-          destruct H12.
-          inversion H12; clear H12; subst. inversion H20.
+          
           
       
 
