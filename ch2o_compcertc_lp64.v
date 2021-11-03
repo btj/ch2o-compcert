@@ -250,8 +250,8 @@ Inductive block_equiv(m: memory_map.mem K)(ṁ: Memory.Mem.mem)(b: Values.block)
   block_equiv m ṁ b
 | block_equiv_alloced oz:
   Memory.Mem.loadv AST.Mint32 ṁ (Vptr b Ptrofs.zero) = Some (compcert_val_of oz) →
-  (∀ z', Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero) (Vint (Int.repr z')) ≠ None) →
-  Memory.Mem.free ṁ b 0%Z 4%Z ≠ None →
+  Memory.Mem.valid_access ṁ AST.Mint32 b 0 Memtype.Writable →
+  Memory.Mem.range_perm ṁ b 0%Z 4%Z Memtype.Cur Memtype.Freeable →
   index_alive '{m} (Npos b) →
   (Γ, '{m}) ⊢ addr_top (N.pos b) sintT : TType sintT%T →
   m !!{Γ} addr_top (Npos b) sintT = Some (ch2o_val_of oz) →
@@ -296,21 +296,11 @@ Proof.
       * simpl.
         simpl in H1.
         apply Memory.Mem.load_store_same with (1:=H1).
-      * intro.
-        destruct (Memory.Mem.valid_access_store ṁ' AST.Mint32 b (Ptrofs.unsigned Ptrofs.zero) (Vint (Int.repr z'))). {
-          apply Memory.Mem.store_valid_access_1 with (1:=H1).
-          apply Memory.Mem.store_valid_access_3 with (1:=H1).
-        }
-        simpl.
-        congruence.
-      * destruct (Memory.Mem.range_perm_free ṁ' b 0 4). {
-          intro; intros.
-          apply Memory.Mem.perm_store_1 with (1:=H1).
-          case_eq (Memory.Mem.free ṁ b 0 4); intros; try congruence.
-          apply Memory.Mem.free_range_perm with (1:=H11).
-          assumption.
-        }
-        congruence.
+      * apply Memory.Mem.store_valid_access_1 with (1:=H1).
+        apply Memory.Mem.store_valid_access_3 with (1:=H1).
+      * intro; intros.
+        apply Memory.Mem.perm_store_1 with (1:=H1).
+        apply H4; assumption.
       * erewrite mem_insert_memenv_of; try eassumption.
       * erewrite mem_insert_memenv_of; try eassumption.
       * assert (freeze true (ch2o_val_of (Some z)) = ch2o_val_of (Some z)). reflexivity.
@@ -328,22 +318,10 @@ Proof.
            rewrite Memory.Mem.load_store_other with (1:=H1).
            ++ assumption.
            ++ left; assumption.
-        -- intros.
-           destruct (Memory.Mem.valid_access_store ṁ' AST.Mint32 b0 (Ptrofs.unsigned Ptrofs.zero) (Vint (Int.repr z'))). {
-             apply Memory.Mem.store_valid_access_1 with (1:=H1).
-             case_eq (Memory.Mem.storev AST.Mint32 ṁ (Vptr b0 Ptrofs.zero) (Vint (Int.repr z'))); intros. 2:{ elim (H4 z' H11). }
-             apply Memory.Mem.store_valid_access_3 with (1:=H11).
-           }
-           simpl.
-           congruence.
-        -- destruct (Memory.Mem.range_perm_free ṁ' b0 0 4). {
-             intro; intros.
-             apply Memory.Mem.perm_store_1 with (1:=H1).
-             case_eq (Memory.Mem.free ṁ b0 0 4); intros; try congruence.
-             apply Memory.Mem.free_range_perm with (1:=H12).
-             assumption.
-           }
-           congruence.
+        -- apply Memory.Mem.store_valid_access_1 with (1:=H1) (2:=H4).
+        -- intro; intros.
+           apply Memory.Mem.perm_store_1 with (1:=H1).
+           apply H5; assumption.
         -- erewrite mem_insert_memenv_of; eassumption.
         -- erewrite mem_insert_memenv_of; try eassumption.
         -- eapply mem_lookup_insert_disjoint; try eassumption.
@@ -789,6 +767,27 @@ Proof.
   rewrite ctree_flatten_map.
   rewrite <- !list_fmap_compose.
   reflexivity.
+Qed.
+
+Lemma mem_unlock_all_mem_alloc o μ γ v (m: mem K):
+  perm_unlock γ = γ →
+  mem_unlock_all (mem_alloc Γ o μ γ v m) =
+  mem_alloc Γ o μ γ v (mem_unlock_all m).
+Proof.
+  intros ?.
+  rewrite !mem_unlock_all_spec'.
+  destruct m as [m].
+  simpl.
+  f_equal.
+  rewrite fmap_insert.
+  f_equal.
+  simpl.
+  f_equal.
+  rewrite ctree_map_of_val with (g:=perm_unlock). 2:{ intros; reflexivity. }
+  f_equal.
+  rewrite fmap_replicate.
+  f_equal.
+  assumption.
 Qed.
 
 Lemma dom_mem_unlock_all (m: mem K): dom indexset (mem_unlock_all m) = dom indexset m.
@@ -1500,15 +1499,11 @@ induction 1; intros.
          apply mem_writable_unlock_all in H.
          eapply mem_writable_alive in H; try eassumption.
          destruct (blocks_equiv0 b); try tauto.
-         case_eq (Memory.Mem.storev AST.Mint32 ṁ (Vptr b Ptrofs.zero) (Vint (Int.repr z))); intros. 2:{
-           elim (H1 _ H11).
-         }
+         edestruct Memory.Mem.valid_access_store with (1:=H1).
          eapply imm_safe_rred with (C:=λ x, x). 2:{ apply ctx_top. }
-         constructor. {
-           apply sem_cast_int.
-         }
          econstructor; try reflexivity.
-         eassumption.
+         econstructor; try reflexivity.
+         apply e.
       -- lapply (H3 [] _ eq_refl). 2:{ constructor. constructor. constructor. }
          intros.
          inversion H; clear H; subst.
@@ -2182,6 +2177,24 @@ Qed.
 
 End Locals.
 
+Lemma mem_lookup_mem_alloc_ne m b v b1:
+  b1 ≠ b →
+  m !!{Γ} addr_top (N.pos b) sintT = Some v →
+  mem_alloc Γ (N.pos b1) false perm_full (val_new Γ sintT) m
+    !!{Γ} addr_top (N.pos b) sintT = Some v.
+Proof.
+  intros ?.
+  destruct m as [m].
+  simpl.
+  unfold mem_lookup.
+  simpl.
+  unfold cmap_lookup.
+  rewrite option_guard_True. 2:{ constructor. simpl. lia. }
+  simpl.
+  rewrite lookup_insert_ne. 2:{ congruence. }
+  tauto.
+Qed.
+
 Lemma alloc_variables_soundness Q f ê ê' s ṡ:
   Coqlib.list_norepet (ê ++ ê') →
   stmt_equiv (ê ++ ê') s ṡ →
@@ -2231,6 +2244,13 @@ Proof.
     simpl in H3.
     inversion H3; clear H3; subst.
     rename m1 into ṁ0'.
+    destruct H1.
+    assert (Hdom: (N.pos b1: index) ∉ dom indexset m). {
+      rewrite <- dom_mem_unlock_all.
+      apply domains_equiv0.
+      rewrite Memory.Mem.alloc_result with (1:=H14).
+      reflexivity.
+    }
     eapply IHê' with (ê:=(ê ++ [x])%list). {
      rewrite <- app_assoc. assumption.
     } {
@@ -2243,11 +2263,7 @@ Proof.
       eapply rtc_l; [|eassumption].
       apply cstep_in_block with (o:=Npos b1).
       - constructor.
-      - destruct H1.
-        rewrite <- dom_mem_unlock_all.
-        apply domains_equiv0.
-        rewrite Memory.Mem.alloc_result with (1:=H14).
-        lia.
+      - assumption.
     } {
       split.
       - intros.
@@ -2260,22 +2276,13 @@ Proof.
             -- simpl.
                apply Z.divide_0_r.
           * intros.
-            lapply (Memory.Mem.valid_access_store ṁ0' AST.Mint32 b1 0%Z (Vint (Int.repr z'))). 2:{
-              eapply Memory.Mem.valid_access_implies.
-              apply Memory.Mem.valid_access_alloc_same with (1:=H14).
-              -- reflexivity.
-              -- reflexivity.
-              -- simpl; apply Z.divide_0_r.
-              -- constructor.
-            }
-            intros.
-            destruct X.
-            simpl.
-            assert (Ptrofs.unsigned Ptrofs.zero = 0%Z). reflexivity.
-            rewrite H3.
-            congruence.
-          * destruct (Memory.Mem.range_perm_free ṁ0' b1 0 4). 2:{ congruence. }
-            intro; intros.
+            eapply Memory.Mem.valid_access_implies.
+            apply Memory.Mem.valid_access_alloc_same with (1:=H14).
+            -- reflexivity.
+            -- reflexivity.
+            -- simpl; apply Z.divide_0_r.
+            -- constructor.
+          * intro; intros.
             apply Memory.Mem.perm_alloc_2 with (1:=H14).
             assumption.
           * rewrite memenv_of_mem_unlock_all.
@@ -2285,12 +2292,9 @@ Proof.
                constructor.
           * rewrite memenv_of_mem_unlock_all.
             constructor.
-            -- eapply mem_alloc_index_typed'.
+            -- eapply mem_alloc_new_index_typed'.
                ++ assumption.
-               ++ apply val_new_typed.
-                  ** assumption.
-                  ** constructor.
-                     constructor.
+               ++ constructor; constructor.
             -- constructor; constructor.
             -- constructor.
             -- reflexivity.
@@ -2313,12 +2317,11 @@ Proof.
                ++ constructor; constructor.
             -- constructor.
           * constructor.
-        + destruct H1.
-          destruct (blocks_equiv0 b).
+        + destruct (blocks_equiv0 b).
           * apply block_equiv_not_alloced.
             rewrite memenv_of_mem_unlock_all.
             intro.
-            elim H1.
+            elim H3.
             erewrite mem_alloc_memenv_of in H7.
             -- eapply mem_alloc_index_alive_inv. 2:{ rewrite memenv_of_mem_unlock_all. eassumption. }
                congruence.
@@ -2327,14 +2330,37 @@ Proof.
                ++ assumption.
                ++ constructor; constructor.
           * apply block_equiv_alloced with (oz:=oz).
-            -- apply Memory.Mem.load_alloc_other with (1:=H14) (2:=H1).
-            -- intros.
-               destruct (Memory.Mem.valid_access_store ṁ0' AST.Mint32 b (Ptrofs.unsigned Ptrofs.zero) (Vint (Int.repr z'))). 2:{
-                 unfold Memory.Mem.storev. congruence.
-               }
-               apply Memory.Mem.valid_access_alloc_other with (1:=H14).
-
-               apply Memory.Mem.store_valid_access_3 with (1:=H7 0%Z).
+            -- apply Memory.Mem.load_alloc_other with (1:=H14) (2:=H3).
+            -- apply Memory.Mem.valid_access_alloc_other with (1:=H14).
+               assumption.
+            -- intro; intros.
+               apply Memory.Mem.perm_alloc_1 with (1:=H14).
+               apply H8; assumption.
+            -- rewrite memenv_of_mem_unlock_all.
+               erewrite mem_alloc_memenv_of.
+               ++ rewrite memenv_of_mem_unlock_all in H9.
+                  apply mem_alloc_index_alive_ne; try assumption.
+                  congruence.
+               ++ assumption.
+               ++ apply val_new_typed.
+                  ** assumption.
+                  ** constructor; constructor.
+            -- rewrite memenv_of_mem_unlock_all.
+               apply addr_top_typed.
+               ++ assumption.
+               ++ eapply memenv_forward_typed.
+                  ** apply mem_alloc_new_forward'.
+                     --- assumption.
+                     --- assumption.
+                     --- constructor; constructor.
+                  ** inversion H10; clear H10; subst.
+                     rewrite memenv_of_mem_unlock_all in H22.
+                     assumption.
+               ++ constructor; constructor.
+           -- erewrite mem_unlock_all_lookup.
+              ++ reflexivity.
+              ++ apply mem_lookup_mem_alloc_ne. { congruence. }
+                 erewrite mem_unlock_all_lookup in H11.
     }
             
     
