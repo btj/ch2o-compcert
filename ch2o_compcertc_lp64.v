@@ -2693,7 +2693,18 @@ Proof.
                  apply mem_lookup_mem_free. congruence.
                  assumption.
               -- rewrite mem_unlock_all_mem_free.
-                 Search mem_writable mem_free.
+                 apply mem_writable_mem_free; try assumption.
+                 congruence.
+              -- assumption.
+        - intros.
+          rewrite mem_unlock_all_mem_free.
+          rewrite mem_dom_free.
+          apply domains_equiv1.
+          rewrite Memory.Mem.nextblock_free with (1:=Hṁ'1) in H23.
+          assumption.
+        - rewrite mem_unlock_all_mem_free.
+          apply mem_free_valid'; assumption.
+      }
               
 
             
