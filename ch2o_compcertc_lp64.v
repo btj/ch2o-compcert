@@ -790,6 +790,8 @@ Proof.
   assumption.
 Qed.
 
+
+
 Lemma dom_mem_unlock_all (m: mem K): dom indexset (mem_unlock_all m) = dom indexset m.
 Proof.
   rewrite mem_unlock_all_spec'.
@@ -2302,6 +2304,7 @@ Lemma alloc_variables_soundness Q f ê ê' s ṡ:
   mem_equiv (mem_unlock_all m) ṁ0 →
   env_equiv ẽ0 (rev ê) (locals k) →
   alloc_variables (globalenv p) ẽ0 ṁ0 (map (λ x, (x, tint)) ê') ẽ ṁ →
+  ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m} (iτ.1)) (locals k)),
   ch2o_safe_state Γ δ Q (State k (Stmt ↘ (Nat.iter (length ê') (λ s, local{sintT} s) s)) m) →
   (∀ m',
    ch2o_safe_state Γ δ Q (State k (Stmt ↗ (Nat.iter (length ê') (λ s, local{sintT} s) s)) m') →
@@ -2314,6 +2317,7 @@ Lemma alloc_variables_soundness Q f ê ê' s ṡ:
    (∀ x, In x ê → Maps.PTree.get x ẽ = Maps.PTree.get x ẽ0) →
    Memory.Mem.free_list ṁ'0 (map (λ x, match Maps.PTree.get x ẽ with None => (1%positive, 0%Z, 0%Z) | Some (b, τ) => (b, 0%Z, sizeof (globalenv p) τ) end) (rev ê')) = Some ṁ' →
    mem_equiv (mem_unlock_all m') ṁ' →
+   ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m'} (iτ.1)) (locals k)),
    ch2o_safe_state Γ δ Q (State k (Stmt (⇈ (intV{sintT} z)) (Nat.iter (length ê') (λ s, local{sintT} s) s)) m') →
    compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') ẽ ṁ'0)) →
   compcertc_safe_state_n Q p n
@@ -2330,12 +2334,12 @@ Proof.
     }
     inversion H8; clear H8; subst; inversion H7; clear H7; subst; try (destruct H16); try discriminate.
     inversion H3; clear H3; subst.
-    eapply stmt_soundness. 7:{ eassumption. } eassumption. eassumption. {
+    eapply stmt_soundness. 8:{ eassumption. } eassumption. eassumption. {
       rewrite app_nil_r. eassumption.
-    } eassumption. 2:{
+    } eassumption. eassumption. 2:{
       intros.
       eapply H6. lia. assumption. assumption. reflexivity. reflexivity. eassumption.
-      assumption.
+      assumption. assumption.
     }
     intros.
     (* Ssequence *)
@@ -2358,7 +2362,7 @@ Proof.
       rewrite <- app_assoc. assumption.
     } 3:{
       eassumption.
-    } 3:{
+    } 4:{
       intro; intros.
       eapply H4.
       eapply rtc_l; [|eassumption].
@@ -2525,8 +2529,29 @@ Proof.
                right.
                assumption.
             -- assumption.
+    } {
+      constructor.
+      - eapply mem_alloc_index_alive'. assumption.
+        apply val_new_typed. assumption. { constructor; constructor. }
+      - apply Forall_impl with (1:=Hlocals_alive); intros.
+        erewrite mem_alloc_memenv_of with (τ:=sintT%T).
+        + destruct (classic (x0.1 = N.pos b1)).
+          * rewrite H3.
+            eapply mem_alloc_index_alive.
+          * eapply mem_alloc_index_alive_ne. congruence. assumption.
+        + assumption.
+        + apply val_new_typed.
+          * assumption.
+          * constructor; constructor.
     } 2:{
       intros.
+      destruct H10.
+      inversion Hlocals_alive0; clear Hlocals_alive0; subst.
+      destruct (blocks_equiv1 b1). {
+        rewrite memenv_of_mem_unlock_all in H10.
+        elim (H10 H13).
+      }
+      destruct (Memory.Mem.range_perm_free ṁ' b1 0 4 H17) as [ṁ'1 Hṁ'1].
       eapply H6. lia. assumption. assumption. {
         intros.
         rewrite H8. 2:{ apply in_or_app. left. assumption. }
@@ -2534,12 +2559,12 @@ Proof.
           rewrite <- app_assoc.
           reflexivity.
         }
-        rewrite H13 in H.
+        rewrite H24 in H.
         apply Coqlib.list_norepet_append_left in H.
         apply list_norepet_rev in H.
         rewrite rev_app_distr in H.
         inversion H; clear H; subst.
-        rewrite <- In_rev in H18.
+        rewrite <- In_rev in H27.
         apply Maps.PTree.gso.
         intro; subst; tauto.
       } {
@@ -2550,9 +2575,59 @@ Proof.
         - simpl.
           rewrite H8. 2:{ apply in_or_app; right. left. reflexivity. }
           rewrite Maps.PTree.gss.
-          
-          
-      
+          assert (sizeof (prog_comp_env p) tint = 4%Z). reflexivity.
+          rewrite H23.
+          rewrite Hṁ'1.
+          reflexivity.
+      } 3:{
+        intro; intros.
+        eapply H11; try eassumption.
+        eapply rtc_l; [|eassumption].
+        constructor.
+        constructor.
+      } {
+        split.
+        - intros.
+          destruct (classic (b = b1)).
+          + subst.
+            apply block_equiv_not_alloced.
+            rewrite memenv_of_mem_unlock_all.
+            rewrite mem_free_memenv_of.
+            apply mem_free_index_alive.
+          + destruct (blocks_equiv1 b).
+            * apply block_equiv_not_alloced.
+              rewrite memenv_of_mem_unlock_all.
+              rewrite memenv_of_mem_unlock_all in H24.
+              rewrite mem_free_memenv_of.
+              intro.
+              elim H24.
+              apply mem_free_index_alive_inv with (1:=H25).
+            * apply block_equiv_alloced with (oz:=oz0).
+              -- unfold Memory.Mem.loadv.
+                 rewrite Memory.Mem.load_free with (1:=Hṁ'1).
+                 ++ apply H24.
+                 ++ tauto.
+              -- apply Memory.Mem.valid_access_free_1 with (1:=Hṁ'1) (2:=H25). tauto.
+              -- intro; intros.
+                 apply Memory.Mem.perm_free_1 with (1:=Hṁ'1). tauto.
+                 apply H26; assumption.
+              -- rewrite memenv_of_mem_unlock_all.
+                 rewrite memenv_of_mem_unlock_all in H27.
+                 rewrite mem_free_memenv_of.
+                 apply mem_free_index_alive_ne. congruence.
+                 assumption.
+              -- apply addr_top_typed.
+                 ++ assumption.
+                 ++ rewrite memenv_of_mem_unlock_all.
+                    eapply memenv_forward_typed.
+                    ** rewrite mem_free_memenv_of.
+                       apply mem_free_forward.
+                    ** inversion H28; subst.
+                       rewrite memenv_of_mem_unlock_all in H38.
+                       assumption.
+                 ++ constructor; constructor.
+              -- 
+              
 
             
     
