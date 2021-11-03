@@ -2357,10 +2357,36 @@ Proof.
                      rewrite memenv_of_mem_unlock_all in H22.
                      assumption.
                ++ constructor; constructor.
-           -- erewrite mem_unlock_all_lookup.
-              ++ reflexivity.
-              ++ apply mem_lookup_mem_alloc_ne. { congruence. }
-                 erewrite mem_unlock_all_lookup in H11.
+           -- rewrite mem_unlock_all_mem_alloc. 2:{ reflexivity. }
+              apply mem_lookup_mem_alloc_ne. { congruence. }
+              assumption.
+           -- rewrite mem_unlock_all_mem_alloc. 2:{ reflexivity. }
+              apply mem_alloc_writable.
+              ++ exact sintT%T.
+              ++ rewrite dom_mem_unlock_all.
+                 assumption.
+              ++ assumption.
+           -- assumption.
+      - intros.
+        rewrite dom_mem_unlock_all.
+        rewrite mem_dom_alloc.
+        rewrite Memory.Mem.alloc_result with (1:=H14).
+        rewrite Memory.Mem.nextblock_alloc with (1:=H14) in H1.
+        rewrite elem_of_union.
+        intro.
+        destruct H3.
+        + rewrite elem_of_singleton in H3.
+          injection H3; clear H3; intros; subst.
+          lia.
+        + rewrite <- dom_mem_unlock_all in H3.
+          apply domains_equiv0 in H3. assumption.
+          lia.
+      - rewrite mem_unlock_all_mem_alloc. 2:{ reflexivity. }
+        apply mem_alloc_new_valid'; try eassumption.
+        + rewrite dom_mem_unlock_all. assumption.
+        + apply perm_full_valid.
+        + apply perm_full_mapped.
+        + constructor; constructor.
     }
             
     
