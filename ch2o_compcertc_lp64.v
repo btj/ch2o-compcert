@@ -2272,6 +2272,31 @@ Proof.
   destruct (m !! o) as [[|w μ]|]; try (intros; tauto).
 Qed.
 
+Lemma mem_writable_mem_free o o' m:
+  o' ≠ o →
+  mem_writable Γ (addr_top o sintT) m →
+  mem_writable Γ (addr_top o sintT) (mem_free o' m).
+Proof.
+  destruct m as [m].
+  unfold mem_writable.
+  intros.
+  destruct H0 as [w [? ?]].
+  exists w.
+  split.
+  - unfold mem_free.
+    simpl.
+    unfold cmap_lookup.
+    rewrite option_guard_True. 2:{ constructor. simpl. lia. }
+    simpl.
+    rewrite lookup_alter_ne with (1:=H).
+    simpl in H0.
+    unfold cmap_lookup in H0.
+    rewrite option_guard_True in H0. 2:{ constructor. simpl. lia. }
+    simpl in H0.
+    assumption.
+  - assumption.
+Qed.
+
 Lemma list_norepet_rev {A} (xs: list A):
   Coqlib.list_norepet xs → Coqlib.list_norepet (rev xs).
 Proof.
@@ -2665,7 +2690,10 @@ Proof.
                        assumption.
                  ++ constructor; constructor.
               -- rewrite mem_unlock_all_mem_free.
-                 
+                 apply mem_lookup_mem_free. congruence.
+                 assumption.
+              -- rewrite mem_unlock_all_mem_free.
+                 Search mem_writable mem_free.
               
 
             
