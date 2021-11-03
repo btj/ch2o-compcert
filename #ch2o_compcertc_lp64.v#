@@ -2513,9 +2513,7 @@ Proof.
         - simpl.
           rewrite H8. 2:{ apply in_or_app; right. left. reflexivity. }
           rewrite Maps.PTree.gss.
-          edestruct H11. { apply rtc_refl. } { inversion H12. }
-          destruct H12.
-          inversion H12; clear H12; subst. inversion H20.
+          
           
       
 
