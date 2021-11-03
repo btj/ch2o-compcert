@@ -2255,7 +2255,22 @@ Proof.
   tauto.
 Qed.
 
-Lemma 
+Lemma mem_lookup_mem_free o m o' v:
+  o' ≠ o →
+  m !!{Γ} addr_top o sintT = Some v →
+  mem_free o' m !!{Γ} addr_top o sintT = Some v.
+Proof.
+  intros ?.
+  destruct m as [m].
+  simpl.
+  unfold mem_lookup.
+  simpl.
+  unfold cmap_lookup.
+  rewrite option_guard_True. 2:{ constructor. simpl. lia. }
+  simpl.
+  rewrite lookup_alter_ne with (1:=H).
+  destruct (m !! o) as [[|w μ]|]; try (intros; tauto).
+Qed.
 
 Lemma list_norepet_rev {A} (xs: list A):
   Coqlib.list_norepet xs → Coqlib.list_norepet (rev xs).
