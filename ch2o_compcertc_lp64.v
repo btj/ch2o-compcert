@@ -790,7 +790,28 @@ Proof.
   assumption.
 Qed.
 
-
+Lemma mem_unlock_all_mem_free o (m: mem K):
+  mem_unlock_all (mem_free o m) = mem_free o (mem_unlock_all m).
+Proof.
+  destruct m as [m].
+  rewrite !mem_unlock_all_spec'.
+  simpl.
+  f_equal.
+  apply map_eq; intro i.
+  rewrite !lookup_fmap.
+  destruct (classic (o = i)).
+  - subst.
+    rewrite lookup_alter.
+    rewrite lookup_alter.
+    rewrite lookup_fmap.
+    destruct (m !! i) as [[|w μ]|]; try reflexivity.
+    simpl.
+    rewrite ctree_map_type_of.
+    reflexivity.
+  - rewrite !lookup_alter_ne with (1:=H).
+    rewrite lookup_fmap.
+    reflexivity.
+Qed.
 
 Lemma dom_mem_unlock_all (m: mem K): dom indexset (mem_unlock_all m) = dom indexset m.
 Proof.
@@ -2234,6 +2255,8 @@ Proof.
   tauto.
 Qed.
 
+Lemma 
+
 Lemma list_norepet_rev {A} (xs: list A):
   Coqlib.list_norepet xs → Coqlib.list_norepet (rev xs).
 Proof.
@@ -2626,7 +2649,8 @@ Proof.
                        rewrite memenv_of_mem_unlock_all in H38.
                        assumption.
                  ++ constructor; constructor.
-              -- 
+              -- rewrite mem_unlock_all_mem_free.
+                 
               
 
             
