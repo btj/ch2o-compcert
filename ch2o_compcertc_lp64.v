@@ -2406,7 +2406,7 @@ Lemma alloc_variables_soundness Q f ê ê' s ṡ:
   stmt_equiv (rev (ê ++ ê')) s ṡ →
   ∀ n k ḳ m ṁ0 ṁ ẽ0 ẽ,
   mem_equiv (mem_unlock_all m) ṁ0 →
-  ∀(Hblocks_norepet: ∀ i x, rev ê !! i = Some x → Maps.PTree.get x ẽ0 = Some (Memory.Mem.nextblock ṁ0 - Pos.of_succ_nat i, tint)%positive),
+  ∀(Hblocks_norepet: ∀ i x, rev ê !! i = Some x → ∃ b, Maps.PTree.get x ẽ0 = Some (b, tint) /\ (Memory.Mem.nextblock ṁ0 = b + Pos.of_succ_nat i)%positive),
   ∀(Henv_tight: ∀ x b τ, Maps.PTree.get x ẽ0 = Some (b, τ) → x ∈ ê),
   env_equiv ẽ0 (rev ê) (locals k) →
   alloc_variables (globalenv p) ẽ0 ṁ0 (map (λ x, (x, tint)) ê') ẽ ṁ →
@@ -2420,7 +2420,7 @@ Lemma alloc_variables_soundness Q f ê ê' s ṡ:
    ∀ z ḳ' m' ṁ',
    int_typed z (sintT: int_type K) →
    call_cont ḳ' = call_cont ḳ →
-   ∀(Hblocks_norepet: ∀ i x, rev (ê ++ ê') !! i = Some x → Maps.PTree.get x ẽ = Some (Memory.Mem.nextblock ṁ - Pos.of_succ_nat i, tint)%positive),
+   ∀(Hblocks_norepet: ∀ i x, rev (ê ++ ê') !! i = Some x → ∃ b, Maps.PTree.get x ẽ = Some (b, tint) /\ (Memory.Mem.nextblock ṁ = b + Pos.of_succ_nat i)%positive),
    ∀(Henv_tight: ∀ x b τ, Maps.PTree.get x ẽ = Some (b, τ) → x ∈ (ê ++ ê')%list),
    (∀ x, In x ê → Maps.PTree.get x ẽ = Maps.PTree.get x ẽ0) →
    (∀ x,
@@ -2621,14 +2621,14 @@ Proof.
         f_equal.
         f_equal.
         rewrite Memory.Mem.alloc_result with (1:=H14).
-        lia.
+        eexists. split. reflexivity. lia.
       - simpl in H1.
         rewrite Maps.PTree.gso.
         + apply Hblocks_norepet in H1.
           unfold Values.block.
+          destruct H1 as [b0 [? ?]].
           rewrite H1.
-          f_equal.
-          f_equal.
+          eexists; split. reflexivity.
           lia.
         + assert (ê ++ x :: ê' = (ê ++ [x]) ++ ê')%list. {
             rewrite <- app_assoc.
@@ -2931,6 +2931,67 @@ Lemma alloc_variables_soundness :
   mem_equiv ṁ' env_equiv
 *)
 
+Lemma free_list_lemma ê ẽ ṁ (m': mem K) ṁ'0 xbτs:
+  (∀ i x, ê !! i = Some x → ∃ b, Maps.PTree.get x ẽ = Some (b, tint) /\ (Memory.Mem.nextblock ṁ = b + Pos.of_succ_nat i)%positive) →
+  (∀ x b τ, Maps.PTree.get x ẽ = Some (b, τ) → x ∈ ê) →
+  ∀(Hnorepet: Coqlib.list_norepet (map fst xbτs)),
+  (∀ xbτ,
+   In xbτ xbτs →
+   match xbτ with
+   | (x, (b, τ)) =>
+     Maps.PTree.get x ẽ = Some (b, τ) /\
+     ¬ index_alive '{m'} (N.pos b) /\ Memory.Mem.range_perm ṁ'0 b 0 (sizeof (globalenv p) τ) Memtype.Cur Memtype.Freeable
+   end) →
+  ∃ ṁ',
+  Memory.Mem.free_list ṁ'0
+  (map (block_of_binding (Smallstep.globalenv (semantics p)))
+     xbτs) = Some ṁ'.
+Proof.
+  intros ? ?.
+  revert ṁ'0.
+  induction xbτs; intros.
+  - eexists.
+    constructor.
+  - destruct a as [x [b τ]].
+    destruct (H1 (x, (b, τ))) as [? [? ?]]. { left. reflexivity. }
+    destruct Memory.Mem.range_perm_free with (1:=H4) as [ṁ'1 ?].
+    inversion Hnorepet; clear Hnorepet; subst.
+    destruct (IHxbτs ṁ'1) as [ṁ' ?]. assumption.
+    + intros.
+      destruct xbτ as [x' [b' τ']].
+      destruct (H1 (x', (b', τ'))) as [? [? ?]]. { right. assumption. }
+      split. assumption.
+      split. assumption.
+      intro; intros.
+      apply Memory.Mem.perm_free_1 with (1:=e). 2:{ apply H10; assumption. }
+      left.
+      assert (x' ≠ x). {
+        intro; subst.
+        elim H7.
+        apply in_map with (1:=H5) (f:=fst).
+      }
+      destruct (elem_of_list_lookup_1 ê x) as [i Hi]. {
+        eapply H0; eassumption.
+      }
+      destruct (elem_of_list_lookup_1 ê x') as [i' Hi']. {
+        eapply H0; eassumption.
+      }
+      assert (i' ≠ i). congruence.
+      apply H in Hi.
+      apply H in Hi'.
+      destruct Hi as [b_ [? ?]].
+      destruct Hi' as [b'_ [? ?]].
+      rewrite H14 in H2; injection H2; clear H2; intros; subst.
+      rewrite H16 in H6; injection H6; clear H6; intros; subst.
+      lia.
+    + exists ṁ'.
+      simpl.
+      destruct p. simpl in e.
+      simpl.
+      rewrite e.
+      apply H5.
+Qed.
+
 Theorem soundness Q:
   program_equiv →
   ch2o_safe_program Γ δ Q →
@@ -2963,30 +3024,69 @@ rename m2 into ṁ1.
 rename e into ẽ.
 simpl in H7.
 (* Allocating the locals *)
-revert H7.
-simpl in H13.
-simpl in H14.
-revert H14.
-revert H13.
-revert ẽ ṁ1.
-inversion Hch2o.
-
-(* Ssequence *)
-inversion H7; clear H7; subst. {
-  right.
-  eexists.
-  eexists.
-  right.
+eapply alloc_variables_soundness with (ẽ0:=empty_env) (ê:=[]) (ê':=rev ê) (m:=(∅: mem K)) (ṁ0:=ṁ) (k:=[CParams "main" []]).
+12:{ eassumption. }
+- simpl.
+  simpl in H13.
+  unfold var_names in H13.
+  rewrite map_rev in H13.
+  rewrite map_map in H13.
+  simpl in H13.
+  rewrite map_id in H13.
+  assumption.
+- simpl.
+  rewrite rev_involutive.
+  eassumption.
+- split.
+  + intros.
+    apply block_equiv_not_alloced.
+    intro.
+    apply index_alive_dom in H4.
+    rewrite dom_mem_unlock_all in H4.
+    assert (dom indexset (∅: mem K) = ∅). {
+      unfold empty.
+      unfold dom.
+      unfold sep_empty.
+      unfold mem_sep_ops.
+      unfold cmap_ops.
+      simpl.
+      rewrite dom_empty_L.
+      reflexivity.
+    }
+    rewrite H6 in H4.
+    apply elem_of_empty in H4.
+    elim H4.
+  + intros.
+    rewrite dom_mem_unlock_all.
+    unfold dom.
+    unfold cmap_dom.
+    unfold empty.
+    unfold sep_empty.
+    unfold mem_sep_ops.
+    unfold cmap_ops.
+    rewrite dom_empty_L.
+    intro.
+    apply elem_of_empty in H6.
+    elim H6.
+  + rewrite mem_unlock_all_empty.
+    apply cmap_empty_valid'.
+- intros.
+  simpl in H4.
+  rewrite lookup_nil in H4.
+  discriminate.
+- intros.
+  unfold empty_env in H4.
+  rewrite Maps.PTree.gempty in H4.
+  discriminate.
+- simpl.
   constructor.
-}
-inversion H4; clear H4; subst; inversion H7; clear H7; subst.
-(* Executing the body *)
-eapply stmt_soundness; try eassumption. {
-  
-} {
-  intro; intros.
+- simpl in H14.
+  rewrite map_rev.
+  assumption.
+- constructor.
+- intro; intros.
   destruct (Hch2o S'); try tauto.
-  apply rtc_transitive with (2:=H1).
+  apply rtc_transitive with (2:=H4).
   (* Showing a CH2O execution *)
   (* Calling main *)
   eapply rtc_l. {
@@ -2996,70 +3096,70 @@ eapply stmt_soundness; try eassumption. {
     - reflexivity.
   }
   simpl.
+  rewrite rev_length.
   apply rtc_refl.
-} {
-  intros.
-  destruct (H2 (State [] (Return "main" voidV) ∅)). {
+- intros.
+  destruct (H4 (State [] (Return "main" voidV) m')). {
     eapply rtc_l; [|apply rtc_refl].
     constructor.
   }
-  - inversion H4.
-  - destruct H4 as [S'' H4].
-    inversion H4.
-}
-intros.
-intro; intros.
-inversion H7; clear H7; subst. {
-  right.
-  eexists; eexists.
-  right.
+  + inversion H6.
+  + destruct H6 as [S'' H6].
+    inversion H6.
+- intros.
+  intro; intros.
+  inversion H15; clear H15; subst. {
+    right.
+    eexists; eexists.
+    right.
+    constructor.
+    - simpl.
+      apply sem_cast_int.
+    - unfold blocks_of_env.
+      
+  }
+  inversion H8; clear H8; subst; inversion H7; clear H7; subst. {
+    inversion H17; clear H17; subst; try discriminate.
+  } {
+    inversion H17; clear H17; subst; try discriminate.
+    subst.
+    inversion H16.
+  } {
+    inversion H17; clear H17; subst; try discriminate.
+    subst.
+    inversion H16.
+  } {
+    inversion H16; clear H16; subst; try discriminate.
+    subst.
+    elim H17.
+    constructor.
+  }
+  rewrite H4 in H9.
+  simpl in H9.
+  inversion H9; clear H9; subst. 2:{
+    inversion H7; clear H7; subst; inversion H9; clear H9; subst.
+  }
+  left.
+  simpl in H17.
+  rewrite sem_cast_int in H17.
+  injection H17; clear H17; intros; subst.
   constructor.
-  - simpl.
-    apply sem_cast_int.
-  - reflexivity.
-}
-inversion H8; clear H8; subst; inversion H7; clear H7; subst. {
-  inversion H17; clear H17; subst; try discriminate.
-} {
-  inversion H17; clear H17; subst; try discriminate.
-  subst.
-  inversion H16.
-} {
-  inversion H17; clear H17; subst; try discriminate.
-  subst.
-  inversion H16.
-} {
-  inversion H16; clear H16; subst; try discriminate.
-  subst.
-  elim H17.
-  constructor.
-}
-rewrite H4 in H9.
-simpl in H9.
-inversion H9; clear H9; subst. 2:{
-  inversion H7; clear H7; subst; inversion H9; clear H9; subst.
-}
-left.
-simpl in H17.
-rewrite sem_cast_int in H17.
-injection H17; clear H17; intros; subst.
-constructor.
-rewrite Int.signed_repr. 2:{
-  apply int_typed_limits; assumption.
-}
-(* Proving Q z *)
-destruct (H5 (state.State [] (Return "main" (intV{sintT} z)) ∅)). 2:{
-  inversion H7; assumption.
-} 2:{
-  destruct H7.
-  inversion H7.
-}
-(* Finishing executing ret *)
-eapply rtc_l. {
-  constructor.
-}
-simpl.
-apply rtc_refl.
+  rewrite Int.signed_repr. 2:{
+    apply int_typed_limits; assumption.
+  }
+  (* Proving Q z *)
+  destruct (H5 (state.State [] (Return "main" (intV{sintT} z)) ∅)). 2:{
+    inversion H7; assumption.
+  } 2:{
+    destruct H7.
+    inversion H7.
+  }
+  (* Finishing executing ret *)
+  eapply rtc_l. {
+    constructor.
+  }
+  simpl.
+  apply rtc_refl.
 Qed.
 
 End Program.
