@@ -3108,58 +3108,79 @@ eapply alloc_variables_soundness with (ẽ0:=empty_env) (ê:=[]) (ê':=rev ê) (
     inversion H6.
 - intros.
   intro; intros.
-  inversion H15; clear H15; subst. {
-    right.
-    eexists; eexists.
-    right.
+  edestruct free_list_lemma as [ṁ'' ?]; try eassumption.
+  + intros.
+    apply elem_of_list_In.
+    apply <- In_rev.
+    rewrite rev_involutive.
+    apply elem_of_list_In.
+    eapply Henv_tight.
+    eassumption.
+  + apply Maps.PTree.elements_keys_norepet.
+  + intros.
+    clear b H1 H3.
+    destruct xbτ as [x [b τ]].
+    split.
+    * apply Maps.PTree.elements_complete; eassumption.
+    * pose proof (H10 x).
+      apply Maps.PTree.elements_complete in H16.
+      unfold Values.block in H1.
+      rewrite H16 in H1.
+      apply H1.
+      apply Henv_tight in H16.
+      apply elem_of_list_In in H16.
+      assumption.
+  + inversion H15; clear H15; subst. {
+      right.
+      eexists; eexists.
+      right.
+      constructor.
+      - simpl.
+        apply sem_cast_int.
+      - apply H16.
+    }
+    inversion H17; clear H17; subst; inversion H15; clear H15; subst. {
+      inversion H26; clear H26; subst; try discriminate.
+    } {
+      inversion H26; clear H26; subst; try discriminate.
+      subst.
+      inversion H25.
+    } {
+      inversion H26; clear H26; subst; try discriminate.
+      subst.
+      inversion H25.
+    } {
+      inversion H25; clear H25; subst; try discriminate.
+      subst.
+      elim H26.
+      constructor.
+    }
+    rewrite H8 in H18.
+    simpl in H18.
+    inversion H18; clear H18; subst. 2:{
+      inversion H15; clear H15; subst; inversion H18; clear H18; subst.
+    }
+    left.
+    simpl in H26.
+    rewrite sem_cast_int in H26.
+    injection H26; clear H26; intros; subst.
     constructor.
-    - simpl.
-      apply sem_cast_int.
-    - unfold blocks_of_env.
-      
-  }
-  inversion H8; clear H8; subst; inversion H7; clear H7; subst. {
-    inversion H17; clear H17; subst; try discriminate.
-  } {
-    inversion H17; clear H17; subst; try discriminate.
-    subst.
-    inversion H16.
-  } {
-    inversion H17; clear H17; subst; try discriminate.
-    subst.
-    inversion H16.
-  } {
-    inversion H16; clear H16; subst; try discriminate.
-    subst.
-    elim H17.
-    constructor.
-  }
-  rewrite H4 in H9.
-  simpl in H9.
-  inversion H9; clear H9; subst. 2:{
-    inversion H7; clear H7; subst; inversion H9; clear H9; subst.
-  }
-  left.
-  simpl in H17.
-  rewrite sem_cast_int in H17.
-  injection H17; clear H17; intros; subst.
-  constructor.
-  rewrite Int.signed_repr. 2:{
-    apply int_typed_limits; assumption.
-  }
-  (* Proving Q z *)
-  destruct (H5 (state.State [] (Return "main" (intV{sintT} z)) ∅)). 2:{
-    inversion H7; assumption.
-  } 2:{
-    destruct H7.
-    inversion H7.
-  }
-  (* Finishing executing ret *)
-  eapply rtc_l. {
-    constructor.
-  }
-  simpl.
-  apply rtc_refl.
+    rewrite Int.signed_repr. 2:{
+      apply int_typed_limits; assumption.
+    }
+    (* Proving Q z *)
+    destruct (H12 (state.State [] (Return "main" (intV{sintT} z)) m')). 2:{
+      inversion H15; assumption.
+    } 2:{
+      destruct H15.
+      inversion H15.
+    }
+    (* Finishing executing ret *)
+    eapply rtc_l. {
+      constructor.
+    }
+    simpl.
+    apply rtc_refl.
 Qed.
 
 End Program.
