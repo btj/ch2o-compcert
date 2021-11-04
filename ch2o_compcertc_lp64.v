@@ -2360,6 +2360,17 @@ Proof.
     apply IHxs; assumption.
 Qed.
 
+Lemma index_alive_dom o (m: mem K):
+  index_alive '{m} o → o ∈ dom indexset m.
+Proof.
+  intros.
+  destruct (classic (o ∈ dom indexset m)); try assumption.
+  apply mem_allocable_memenv_of in H0.
+  unfold index_alive in H.
+  destruct H as [τ H].
+  congruence.
+Qed.
+
 Lemma alloc_variables_soundness Q f ê ê' s ṡ:
   Coqlib.list_norepet (ê ++ ê') →
   stmt_equiv (rev (ê ++ ê')) s ṡ →
@@ -2705,10 +2716,39 @@ Proof.
         - rewrite mem_unlock_all_mem_free.
           apply mem_free_valid'; assumption.
       }
-              
+      apply Forall_forall; intros.
+      rewrite Forall_forall in Hlocals_alive.
+      rewrite Forall_forall in H16.
+      rewrite mem_free_memenv_of.
+      apply mem_free_index_alive_ne.
+      - apply Hlocals_alive in H23.
+        destruct x0 as [x0 τ].
+        simpl; intro; subst.
+        rewrite Memory.Mem.alloc_result with (1:=H14) in H23.
+        simpl in H23.
+        apply index_alive_dom in H23.
+        rewrite <- dom_mem_unlock_all in H23.
+        apply domains_equiv0 in H23. tauto.
+        lia.
+      - apply H16.
+        assumption.
+    }
+    intros.
+    eapply H5.
+    intro; intros.
+    apply H1.
+    eapply rtc_l; [|eassumption].
+    constructor.
+    constructor.
+  Unshelve.
+  exact ('{m}).
+  exact ('{m}).
+  exact ('{m}).
+  exact ('{m}).
+  exact ('{m}).
+  exact ('{m}).
+Qed.
 
-            
-    
 Inductive program_equiv: Prop :=
 | program_equiv_intro ê s ṡ b:
   stringmap_lookup "main" δ = Some (Nat.iter (length ê) (λ s, local{sintT} s) s) →
