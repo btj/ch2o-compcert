@@ -2371,11 +2371,43 @@ Proof.
   congruence.
 Qed.
 
+Lemma list_norepet_map {A B} (f: A -> B) xs:
+  Coqlib.list_norepet (map f xs) →
+  Coqlib.list_norepet xs.
+Proof.
+  induction xs; intros.
+  - constructor.
+  - inversion H; clear H; subst.
+    apply IHxs in H3.
+    constructor.
+    + intro.
+      elim H2.
+      apply in_map.
+      assumption.
+    + assumption.
+Qed.
+
+Lemma elem_of_list_In {A} x (xs: list A):
+  elem_of_list x xs ↔ In x xs.
+Proof.
+  induction xs; intros; split; intros.
+  - inversion H.
+  - inversion H.
+  - inversion H; clear H; subst.
+    + left; reflexivity.
+    + right; tauto.
+  - inversion H; clear H; subst.
+    + left; reflexivity.
+    + right; tauto.
+Qed.
+
 Lemma alloc_variables_soundness Q f ê ê' s ṡ:
   Coqlib.list_norepet (ê ++ ê') →
   stmt_equiv (rev (ê ++ ê')) s ṡ →
   ∀ n k ḳ m ṁ0 ṁ ẽ0 ẽ,
   mem_equiv (mem_unlock_all m) ṁ0 →
+  ∀(Hblocks_norepet: ∀ i x, rev ê !! i = Some x → Maps.PTree.get x ẽ0 = Some (Memory.Mem.nextblock ṁ0 - Pos.of_succ_nat i, tint)%positive),
+  ∀(Henv_tight: ∀ x b τ, Maps.PTree.get x ẽ0 = Some (b, τ) → x ∈ ê),
   env_equiv ẽ0 (rev ê) (locals k) →
   alloc_variables (globalenv p) ẽ0 ṁ0 (map (λ x, (x, tint)) ê') ẽ ṁ →
   ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m} (iτ.1)) (locals k)),
@@ -2385,15 +2417,22 @@ Lemma alloc_variables_soundness Q f ê ê' s ṡ:
    False) →
   (∀ n',
    n' ≤ n →
-   ∀ z ḳ' m' ṁ'0 ṁ',
+   ∀ z ḳ' m' ṁ',
    int_typed z (sintT: int_type K) →
    call_cont ḳ' = call_cont ḳ →
+   ∀(Hblocks_norepet: ∀ i x, rev (ê ++ ê') !! i = Some x → Maps.PTree.get x ẽ = Some (Memory.Mem.nextblock ṁ - Pos.of_succ_nat i, tint)%positive),
+   ∀(Henv_tight: ∀ x b τ, Maps.PTree.get x ẽ = Some (b, τ) → x ∈ (ê ++ ê')%list),
    (∀ x, In x ê → Maps.PTree.get x ẽ = Maps.PTree.get x ẽ0) →
-   Memory.Mem.free_list ṁ'0 (map (λ x, match Maps.PTree.get x ẽ with None => (1%positive, 0%Z, 0%Z) | Some (b, τ) => (b, 0%Z, sizeof (globalenv p) τ) end) (rev ê')) = Some ṁ' →
+   (∀ x,
+    In x ê' →
+    match Maps.PTree.get x ẽ with
+      None => True
+    | Some (b, τ) => ¬ index_alive '{m'} (N.pos b) /\ Memory.Mem.range_perm ṁ' b 0 (sizeof (globalenv p) τ) Memtype.Cur Memtype.Freeable
+    end) →
    mem_equiv (mem_unlock_all m') ṁ' →
    ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m'} (iτ.1)) (locals k)),
    ch2o_safe_state Γ δ Q (State k (Stmt (⇈ (intV{sintT} z)) (Nat.iter (length ê') (λ s, local{sintT} s) s)) m') →
-   compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') ẽ ṁ'0)) →
+   compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') ẽ ṁ')) →
   compcertc_safe_state_n Q p n
     (Csem.State f (Ssequence ṡ (Sreturn (Some (Eval (Vint (Int.repr 0)) tint)))) ḳ ẽ ṁ).
 Proof.
@@ -2412,7 +2451,11 @@ Proof.
       rewrite app_nil_r. eassumption.
     } eassumption. eassumption. 2:{
       intros.
-      eapply H6. lia. assumption. assumption. reflexivity. reflexivity. eassumption.
+      eapply H6. lia. assumption. assumption. {
+        rewrite app_nil_r. apply Hblocks_norepet.
+      } {
+        rewrite app_nil_r. apply Henv_tight.
+      } reflexivity. { intros. inversion H12. } eassumption.
       assumption. assumption.
     }
     intros.
@@ -2434,9 +2477,9 @@ Proof.
      rewrite <- app_assoc. assumption.
     } {
       rewrite <- app_assoc. assumption.
-    } 3:{
+    } 5:{
       eassumption.
-    } 4:{
+    } 6:{
       intro; intros.
       eapply H4.
       eapply rtc_l; [|eassumption].
@@ -2567,6 +2610,49 @@ Proof.
         + apply perm_full_mapped.
         + constructor; constructor.
     } {
+      intros.
+      rewrite rev_app_distr in H1.
+      simpl in H1.
+      rewrite Memory.Mem.nextblock_alloc with (1:=H14).
+      destruct i.
+      - simpl in H1.
+        injection H1; clear H1; intros; subst.
+        rewrite Maps.PTree.gss.
+        f_equal.
+        f_equal.
+        rewrite Memory.Mem.alloc_result with (1:=H14).
+        lia.
+      - simpl in H1.
+        rewrite Maps.PTree.gso.
+        + apply Hblocks_norepet in H1.
+          unfold Values.block.
+          rewrite H1.
+          f_equal.
+          f_equal.
+          lia.
+        + assert (ê ++ x :: ê' = (ê ++ [x]) ++ ê')%list. {
+            rewrite <- app_assoc.
+            reflexivity.
+          }
+          rewrite H3 in H.
+          apply Coqlib.list_norepet_append_left in H.
+          apply list_norepet_rev in H.
+          rewrite rev_app_distr in H.
+          inversion H; clear H; subst.
+          apply elem_of_list_lookup_2 in H1.
+          unfold elem_of in H1.
+          apply elem_of_list_In in H1.
+          intro; subst; tauto.
+    } {
+      intros.
+      destruct (classic (x0 = x)).
+      - subst.
+        apply elem_of_app; right.
+        constructor.
+      - rewrite Maps.PTree.gso with (1:=H3) in H1.
+        apply Henv_tight in H1.
+        apply elem_of_app; left; assumption.
+    } {
       simpl.
       rewrite rev_app_distr.
       simpl.
@@ -2584,7 +2670,8 @@ Proof.
         rewrite rev_app_distr.
         simpl.
         generalize (locals k).
-        induction (rev ê); intros.
+        generalize (rev ê).
+        induction l; intros.
         + inversion H2; clear H2; subst.
           constructor.
         + inversion H2; clear H2; subst.
@@ -2625,8 +2712,11 @@ Proof.
         rewrite memenv_of_mem_unlock_all in H10.
         elim (H10 H13).
       }
-      destruct (Memory.Mem.range_perm_free ṁ' b1 0 4 H17) as [ṁ'1 Hṁ'1].
       eapply H6. lia. assumption. assumption. {
+        rewrite <- app_assoc in Hblocks_norepet0. assumption.
+      } {
+        rewrite <- app_assoc in Henv_tight0. assumption.
+      } {
         intros.
         rewrite H8. 2:{ apply in_or_app. left. assumption. }
         assert (ê ++ x :: ê' = (ê ++ [x]) ++ ê')%list. {
@@ -2641,24 +2731,29 @@ Proof.
         rewrite <- In_rev in H27.
         apply Maps.PTree.gso.
         intro; subst; tauto.
-      } {
-        simpl.
-        rewrite map_app.
-        eapply free_list_app_intro.
-        - apply H9.
-        - simpl.
-          rewrite H8. 2:{ apply in_or_app; right. left. reflexivity. }
-          rewrite Maps.PTree.gss.
-          assert (sizeof (prog_comp_env p) tint = 4%Z). reflexivity.
-          rewrite H23.
-          rewrite Hṁ'1.
-          reflexivity.
-      } 3:{
+      } 4:{
         intro; intros.
         eapply H11; try eassumption.
         eapply rtc_l; [|eassumption].
         constructor.
         constructor.
+      } {
+        intros.
+        inversion H23; clear H23; subst.
+        - rewrite H8. 2:{ apply in_or_app. right; constructor. reflexivity. }
+          rewrite Maps.PTree.gss.
+          split.
+          + rewrite mem_free_memenv_of.
+            apply mem_free_index_alive.
+          + apply H17.
+        - apply H9 in H24.
+          destruct (Maps.PTree.get x0 ẽ) as [[b τ]|]; try trivial.
+          destruct H24.
+          split.
+          + rewrite mem_free_memenv_of.
+            intro; elim H23.
+            eapply mem_free_index_alive_inv with (1:=H25).
+          + assumption.
       } {
         split.
         - intros.
@@ -2676,15 +2771,7 @@ Proof.
               intro.
               elim H24.
               apply mem_free_index_alive_inv with (1:=H25).
-            * apply block_equiv_alloced with (oz:=oz0).
-              -- unfold Memory.Mem.loadv.
-                 rewrite Memory.Mem.load_free with (1:=Hṁ'1).
-                 ++ apply H24.
-                 ++ tauto.
-              -- apply Memory.Mem.valid_access_free_1 with (1:=Hṁ'1) (2:=H25). tauto.
-              -- intro; intros.
-                 apply Memory.Mem.perm_free_1 with (1:=Hṁ'1). tauto.
-                 apply H26; assumption.
+            * apply block_equiv_alloced with (oz:=oz0); try assumption.
               -- rewrite memenv_of_mem_unlock_all.
                  rewrite memenv_of_mem_unlock_all in H27.
                  rewrite mem_free_memenv_of.
@@ -2706,12 +2793,10 @@ Proof.
               -- rewrite mem_unlock_all_mem_free.
                  apply mem_writable_mem_free; try assumption.
                  congruence.
-              -- assumption.
         - intros.
           rewrite mem_unlock_all_mem_free.
           rewrite mem_dom_free.
           apply domains_equiv1.
-          rewrite Memory.Mem.nextblock_free with (1:=Hṁ'1) in H23.
           assumption.
         - rewrite mem_unlock_all_mem_free.
           apply mem_free_valid'; assumption.
