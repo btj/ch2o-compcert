@@ -1,4 +1,4 @@
-Require Export ch2o.axiomatic.assertions.
+Require Export ch2o.axiomatic.assertions ch2o.axiomatic.axiomatic_expressions.
 
 Section Program.
 
@@ -111,6 +111,55 @@ rewrite (associative (★)%A).
 apply assert_sep_preserving; [|reflexivity].
 rewrite (commutative (★)%A).
 apply assert_eval_functional.
+Qed.
+
+Lemma assert_Prop_unlock_intro_l (P: Prop) Q R:
+  (P → (Q ◊)%A ⊆{Γ,δ} R) → ((⌜ P ⌝ ★ Q) ◊)%A ⊆{Γ,δ} R.
+Proof.
+  unfold subseteqE.
+  unfold assert_entails.
+  intros.
+  unfold assert_unlock in H8.
+  unfold assert_sep in H8.
+  simpl in H8.
+  destruct H8 as [m1 [m2 [? [? [[? ?] ?]]]]].
+  subst.
+  apply H1; try assumption.
+  rewrite sep_left_id in H8.
+  subst.
+  assumption.
+  apply sep_disjoint_list_valid in H9.
+  inversion H9; clear H9; subst.
+  inversion H15; clear H15; subst.
+  assumption.
+Qed.
+
+Lemma assert_holds_sep_Prop_l_elim P Q Γ' Δ δ' ρ n m:
+  assert_holds (⌜ P ⌝ ★ Q)%A Γ' Δ δ' ρ n m →
+  P /\ assert_holds Q Γ' Δ δ' ρ n m.
+Proof.
+  unfold assert_sep.
+  unfold assert_Prop.
+  simpl.
+  intros.
+  destruct H1 as [m1 [m2 [? [? [[? ?] ?]]]]].
+  subst.
+  rewrite sep_left_id.
+  - split; assumption.
+  - apply sep_disjoint_list_double in H2.
+    apply sep_disjoint_valid_r with (1:=H2).
+Qed.
+
+Lemma ax_expr_Prop_pre A (P: Prop) Q e R:
+  (P → Γ\ δ\ A ⊨ₑ {{ Q }} e {{ R }}) →
+  Γ\ δ\ A ⊨ₑ {{ ⌜ P ⌝ ★ Q }} e {{ R }}.
+Proof.
+  intros.
+  unfold ax_expr.
+  intros.
+  apply assert_holds_sep_Prop_l_elim in H12.
+  destruct H12.
+  apply H1; assumption.
 Qed.
 
 End Program.

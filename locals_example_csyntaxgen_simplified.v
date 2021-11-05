@@ -1,5 +1,6 @@
 From Coq Require Import String List ZArith.
-From compcert Require Import Coqlib Integers Floats Values AST Ctypes Cop Csyntax Csyntaxdefs.
+From compcert Require Import Coqlib Integers Floats Values AST Ctypes Cop Csyntax.
+From ch2o_compcert Require Import Csyntaxdefs.
 Import Csyntaxdefs.CsyntaxNotations.
 Local Open Scope Z_scope.
 Local Open Scope string_scope.
