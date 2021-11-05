@@ -20,14 +20,18 @@ Section Locals.
 
 Context (ê: list AST.ident).
 
+Inductive op_equiv: binop → binary_operation → Prop :=
+| op_equiv_div: op_equiv (ArithOp DivOp) Odiv.
+
 Inductive expr_equiv: expressions.expr K → Csyntax.expr → type_ → Prop :=
 | expr_equiv_val_int Ω z:
   int_typed z (sintT: int_type K) → (* TODO: Require the CH2O program to be well-typed instead? *)
   expr_equiv (#{Ω} intV{sintT} z) (Eval (Vint (Int.repr z)) tint) Int
-| expr_equiv_div e1 ė1 e2 ė2:
+| expr_equiv_binop e1 ė1 e2 ė2 op op':
   expr_equiv e1 ė1 Int →
   expr_equiv e2 ė2 Int →
-  expr_equiv (e1 / e2) (Ebinop Odiv ė1 ė2 tint) Int
+  ∀(Hop: op_equiv op op'),
+  expr_equiv (EBinOp op e1 e2) (Ebinop op' ė1 ė2 tint) Int
 | expr_equiv_var i x:
   ê !! i = Some x →
   expr_equiv (var i) (Evar x tint) Loc
@@ -834,37 +838,23 @@ Proof.
   reflexivity.
 Qed.
 
-Lemma lrred_safe e ė θ:
-  expr_equiv e ė θ →
-  ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
-  context K_ K_' C →
-  ė = C a →
-  lrred ẽ K_ a ṁ t a' ṁ' →
-  mem_equiv (mem_unlock_all m) ṁ →
-  env_equiv ẽ ê ρ →
-  ∀(Hsafe: ∀ (E: ectx K) e1, e = subst E e1 → is_redex e1 → Γ \ ρ ⊢ₕ safe e1, m),
-  ∃ (E: ectx K) e1 e2 m',
-  e = subst E e1 ∧
-  Γ \ ρ ⊢ₕ e1, m ⇒ e2, m' ∧
-  expr_equiv (subst E e2) (C a') θ ∧
-  mem_equiv (mem_unlock_all m') ṁ' ∧
-  '{m'} = '{m}.
+Lemma binop_safe op op' z z0 (m: mem K) ṁ v:
+  op_equiv op op' →
+  sem_binary_operation (globalenv p) op' (Vint (Int.repr z)) tint
+        (Vint (Int.repr z0)) tint ṁ = Some v →
+  int_typed z (sintT: int_type K) →
+  int_typed z0 (sintT: int_type K) →
+  val_binop_ok Γ m op (intV{sintT} z) (intV{sintT} z0) /\
+  ∃ zr,
+  val_binop Γ op (intV{sintT} z: val K) (intV{sintT} z0: val K) = intV{sintT} zr /\
+  v = Vint (Int.repr zr) /\
+  int_typed zr (sintT: int_type K).
 Proof.
-induction 1; intros.
-- inversion H0; clear H0; subst; try discriminate.
-  subst.
-  inversion H2; clear H2; subst; inversion H0.
-- rename H4 into Hmem_equiv.
-  rename H5 into Menv_equiv.
-  inversion H1; clear H1; subst; try discriminate.
-  + subst.
-    inversion H3; clear H3; subst; inversion H1; clear H1; subst.
-    inversion H; clear H; subst;
-    inversion H0; clear H0; subst; try discriminate.
+  induction 1.
+  - intros H10 H3 H2.
     simpl in H10.
     unfold sem_div in H10.
     unfold sem_binarith in H10.
-    simpl in H10.
     rewrite sem_cast_int in H10.
     rewrite sem_cast_int in H10.
     rewrite Int.eq_signed in H10.
@@ -1035,18 +1025,63 @@ induction 1; intros.
     }
     destruct H.
     subst.
+    simpl.
+    split. {
+      constructor.
+      -- assumption.
+      -- apply H.
+    }
+    exists (Z.quot z z0).
+    split. reflexivity. {
+      unfold Int.divs.
+      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+      split. reflexivity.
+      assumption.
+    }
+Qed.
+
+Lemma lrred_safe e ė θ:
+  expr_equiv e ė θ →
+  ∀ C K_ K_' a ẽ ṁ t a' ṁ' ρ m,
+  context K_ K_' C →
+  ė = C a →
+  lrred ẽ K_ a ṁ t a' ṁ' →
+  mem_equiv (mem_unlock_all m) ṁ →
+  env_equiv ẽ ê ρ →
+  ∀(Hsafe: ∀ (E: ectx K) e1, e = subst E e1 → is_redex e1 → Γ \ ρ ⊢ₕ safe e1, m),
+  ∃ (E: ectx K) e1 e2 m',
+  e = subst E e1 ∧
+  Γ \ ρ ⊢ₕ e1, m ⇒ e2, m' ∧
+  expr_equiv (subst E e2) (C a') θ ∧
+  mem_equiv (mem_unlock_all m') ṁ' ∧
+  '{m'} = '{m}.
+Proof.
+induction 1; intros.
+- inversion H0; clear H0; subst; try discriminate.
+  subst.
+  inversion H2; clear H2; subst; inversion H0.
+- rename H4 into Hmem_equiv.
+  rename H5 into Menv_equiv.
+  inversion H1; clear H1; subst; try discriminate.
+  + subst.
+    inversion H3; clear H3; subst; inversion H1; clear H1; subst.
+    inversion H; clear H; subst;
+    inversion H0; clear H0; subst; inversion Hop; subst; try discriminate.
+    eapply binop_safe in H10; try eassumption.
+    destruct H10.
+    destruct H0 as [zr [? [? ?]]].
+    subst.
     exists [].
     eexists; eexists; eexists.
     simpl; split; [reflexivity|].
     split. {
-      constructor. constructor.
-      -- assumption.
-      -- apply H.
+      constructor. eassumption.
     }
     split. {
-      unfold Int.divs.
-      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
-      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+      assert (arch_int_coding A = @int_coding (arch_rank A) (@env_type_env (arch_rank A) (arch_env A))). reflexivity.
+      rewrite H1.
+      rewrite H0.
       constructor.
       assumption.
     }
@@ -1054,10 +1089,10 @@ induction 1; intros.
   + injection H2; clear H2; intros; subst.
     destruct (IHexpr_equiv1 C0 K_ RV a ẽ ṁ t a' ṁ' ρ m H4) as [E [e5 [e6 [m' [? [? ?]]]]]]; try trivial. {
       intros; subst.
-      apply Hsafe with (E0:=E++[CBinOpL (ArithOp DivOp) e2]) (2:=H2).
+      apply Hsafe with (E0:=E++[CBinOpL op e2]) (2:=H2).
       rewrite subst_snoc; reflexivity.
     }
-    exists (E ++ [CBinOpL (ArithOp DivOp) e2])%E; eexists; eexists; eexists.
+    exists (E ++ [CBinOpL op e2])%E; eexists; eexists; eexists.
     rewrite subst_snoc.
     rewrite subst_snoc.
     simpl.
@@ -1069,10 +1104,10 @@ induction 1; intros.
   + injection H2; clear H2; intros; subst.
     destruct (IHexpr_equiv2 C0 K_ RV a ẽ ṁ t a' ṁ' ρ m H4) as [E [e5 [e6 [m' [? [? [? Hṁ']]]]]]]; try trivial. {
       intros; subst.
-      apply Hsafe with (E0:=E++[CBinOpR (ArithOp DivOp) e1]) (2:=H2).
+      apply Hsafe with (E0:=E++[CBinOpR op e1]) (2:=H2).
       rewrite subst_snoc; reflexivity.
     }
-    exists (E ++ [CBinOpR (ArithOp DivOp) e1])%E; eexists; eexists; eexists.
+    exists (E ++ [CBinOpR op e1])%E; eexists; eexists; eexists.
     rewrite subst_snoc.
     rewrite subst_snoc.
     simpl.
@@ -1338,6 +1373,74 @@ Definition kind_of_type(θ: type_): kind :=
   | Loc => LV
   end.
 
+Lemma binop_imm_safe op op' z z0 (m: mem K) ṁ:
+  op_equiv op op' →
+  ∀(H6: int_typed z (sintT: int_type K)),
+  ∀(H5: int_typed z0 (sintT: int_type K)),
+  ∀(H13 : val_binop_ok Γ m op (intV{sintT} z) (intV{sintT} z0)),
+  ∃ zr,
+  sem_binary_operation (globalenv p) op'
+    (Vint (Int.repr z)) tint (Vint (Int.repr z0)) tint
+    ṁ = Some (Vint (Int.repr zr)) /\
+  val_binop Γ op (intV{sintT} z: val K) (intV{sintT} z0) = intV{sintT} zr /\
+  int_typed zr (sintT: int_type K).
+Proof.
+  induction 1; intros.
+  - inversion H13; clear H13; subst.
+    simpl.
+    assert (z0 ≠ 0)%Z. { apply H. }
+    assert (int_typed (z ÷ z0) (sintT%IT: int_type K)). { apply H0. }
+    clear H H0.
+    unfold sem_div.
+    unfold sem_binarith.
+    simpl.
+    rewrite sem_cast_int.
+    rewrite sem_cast_int.
+    rewrite Int.eq_signed.
+    rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+    rewrite Int.signed_zero.
+    destruct (Coqlib.zeq z0 0); try lia.
+    simpl.
+    rewrite Int.eq_signed.
+    rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+    rewrite Int.signed_repr. 2:{
+      split. { reflexivity. }
+      pose proof Int.min_signed_neg.
+      pose proof Int.max_signed_pos.
+      lia.
+    }
+    rewrite Int_min_signed.
+    rewrite Int.eq_signed.
+    rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+    rewrite Int.signed_mone.
+    assert (
+      (if Coqlib.zeq z (-2147483648) then true else false) &&
+      (if Coqlib.zeq z0 (-1) then true else false)
+      = false
+    ). {
+      destruct (Coqlib.zeq z (-2147483648)). {
+        destruct (Coqlib.zeq z0 (-1)). {
+          subst.
+          destruct H2.
+          rewrite int_upper_sintT in H0.
+          discriminate.
+        }
+        reflexivity.
+      }
+      reflexivity.
+    }
+    rewrite H.
+    exists (Z.quot z z0).
+    split. {
+      unfold Int.divs.
+      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+      reflexivity.
+    }
+    split. reflexivity.
+    assumption.
+Qed.
+
 Lemma expr_equiv_imm_safe e ė θ:
   expr_equiv e ė θ →
   ∀ m ṁ ẽ ρ,
@@ -1352,7 +1455,7 @@ induction 1; intros.
     eapply IHexpr_equiv1; try eassumption.
     intros.
     subst.
-    apply (H3 (E++[CBinOpL (ArithOp DivOp) e2])); try assumption.
+    apply (H3 (E++[CBinOpL op e2])); try assumption.
     simpl.
     rewrite subst_snoc.
     reflexivity.
@@ -1361,7 +1464,7 @@ induction 1; intros.
   + assert (imm_safe (globalenv p) ẽ RV ė2 ṁ). {
       eapply IHexpr_equiv2; try eassumption.
       intros; subst.
-      apply (H3 (E++[CBinOpR (ArithOp DivOp) e1])); try assumption.
+      apply (H3 (E++[CBinOpR op e1])); try assumption.
       rewrite subst_snoc.
       reflexivity.
     }
@@ -1398,77 +1501,35 @@ induction 1; intros.
          inversion H0; clear H0; subst.
          inversion H12; clear H12; subst.
       }
-      eapply imm_safe_rred with (C:=λ x, x). 2:{
-        apply ctx_top.
-      }
-      constructor.
-      simpl.
-      assert (Γ \ ρ ⊢ₕ safe (#{Ω} intV{sintT} z / #{Ω0} intV{sintT} z0)%E, m). {
+      assert (Γ \ ρ ⊢ₕ safe (#{Ω} intV{sintT} z .{op} #{Ω0} intV{sintT} z0)%E, m). {
         apply H3 with (E:=[]).
         - reflexivity.
         - constructor; constructor.
       }
       inversion H; clear H; subst.
       inversion H0; clear H0; subst.
-      inversion H13; clear H13; subst.
-      assert (z0 ≠ 0)%Z. { apply H. }
-      assert (int_typed (z ÷ z0) (sintT%IT: int_type K)). { apply H0. }
-      clear H H0.
-      unfold sem_div.
-      unfold sem_binarith.
-      simpl.
-      rewrite sem_cast_int.
-      rewrite sem_cast_int.
-      rewrite Int.eq_signed.
-      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
-      rewrite Int.signed_zero.
-      destruct (Coqlib.zeq z0 0); try lia.
-      simpl.
-      rewrite Int.eq_signed.
-      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
-      rewrite Int.signed_repr. 2:{
-        split. { reflexivity. }
-        pose proof Int.min_signed_neg.
-        pose proof Int.max_signed_pos.
-        lia.
+      eapply binop_imm_safe in H13; try eassumption.
+      destruct H13 as [zr [? [? ?]]].
+      eapply imm_safe_rred with (C:=λ x, x). 2:{
+        apply ctx_top.
       }
-      rewrite Int_min_signed.
-      rewrite Int.eq_signed.
-      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
-      rewrite Int.signed_mone.
-      assert (
-        (if Coqlib.zeq z (-2147483648) then true else false) &&
-        (if Coqlib.zeq z0 (-1) then true else false)
-        = false
-      ). {
-        destruct (Coqlib.zeq z (-2147483648)). {
-          destruct (Coqlib.zeq z0 (-1)). {
-            subst.
-            destruct H7.
-            rewrite int_upper_sintT in H0.
-            discriminate.
-          }
-          reflexivity.
-        }
-        reflexivity.
-      }
-      rewrite H.
-      reflexivity.
-    * eapply imm_safe_lred with (C:=λ x, Ebinop Odiv (Eval v ty) (C x) tint). 2:{
+      constructor.
+      eapply H.
+    * eapply imm_safe_lred with (C:=λ x, Ebinop op' (Eval v ty) (C x) tint). 2:{
         apply ctx_binop_right; assumption.
       }
       eassumption.
-    * eapply imm_safe_rred with (C:=λ x, Ebinop Odiv (Eval v ty) (C x) tint). 2:{
+    * eapply imm_safe_rred with (C:=λ x, Ebinop op' (Eval v ty) (C x) tint). 2:{
         apply ctx_binop_right; assumption.
       }
       eassumption.
     * eelim (expr_equiv_no_call _ _ _ H0); try eassumption.
       reflexivity.
-  + eapply imm_safe_lred with (C:=λ x, Ebinop Odiv (C x) ė2 tint). 2:{
+  + eapply imm_safe_lred with (C:=λ x, Ebinop op' (C x) ė2 tint). 2:{
       apply ctx_binop_left; assumption.
     }
     eassumption.
-  + eapply imm_safe_rred with (C:=λ x, Ebinop Odiv (C x) ė2 tint). 2:{
+  + eapply imm_safe_rred with (C:=λ x, Ebinop op' (C x) ė2 tint). 2:{
       apply ctx_binop_left; assumption.
     }
     eassumption.
@@ -1578,11 +1639,11 @@ Proof.
     rewrite subst_snoc; reflexivity.
   - eapply IHcontext with (1:=H11); eauto.
     intros; subst.
-    eapply H5 with (E0:=E++[CBinOpL (ArithOp DivOp) e0]) (2:=H4).
+    eapply H5 with (E0:=E++[CBinOpL op0 e0]) (2:=H4).
     rewrite subst_snoc; reflexivity.
   - eapply IHcontext with (1:=H12); eauto.
     intros; subst.
-    eapply H5 with (E0:=E++[CBinOpR (ArithOp DivOp) e0]) (2:=H4).
+    eapply H5 with (E0:=E++[CBinOpR op0 e0]) (2:=H4).
     rewrite subst_snoc; reflexivity.
   - eapply IHcontext with (1:=H10); eauto.
     intros; subst.
