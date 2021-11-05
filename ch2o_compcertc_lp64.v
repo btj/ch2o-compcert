@@ -21,7 +21,10 @@ Section Locals.
 Context (ê: list AST.ident).
 
 Inductive op_equiv: binop → binary_operation → Prop :=
-| op_equiv_div: op_equiv (ArithOp DivOp) Odiv.
+| op_equiv_div: op_equiv (ArithOp DivOp) Odiv
+| op_equiv_sub: op_equiv (ArithOp MinusOp) Osub
+| op_equiv_lt: op_equiv (CompOp LtOp) Olt
+.
 
 Inductive expr_equiv: expressions.expr K → Csyntax.expr → type_ → Prop :=
 | expr_equiv_val_int Ω z:
@@ -838,20 +841,25 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma arch_int_coding_spec: arch_int_coding A = int_coding.
+Proof.
+  reflexivity.
+Qed.
+
 Lemma binop_safe op op' z z0 (m: mem K) ṁ v:
   op_equiv op op' →
   sem_binary_operation (globalenv p) op' (Vint (Int.repr z)) tint
         (Vint (Int.repr z0)) tint ṁ = Some v →
   int_typed z (sintT: int_type K) →
   int_typed z0 (sintT: int_type K) →
-  val_binop_ok Γ m op (intV{sintT} z) (intV{sintT} z0) /\
+  val_binop_ok Γ m op (intV{sintT} z) (intV{sintT} z0) →
   ∃ zr,
   val_binop Γ op (intV{sintT} z: val K) (intV{sintT} z0: val K) = intV{sintT} zr /\
   v = Vint (Int.repr zr) /\
   int_typed zr (sintT: int_type K).
 Proof.
   induction 1.
-  - intros H10 H3 H2.
+  - intros H10 H3 H2 Hok.
     simpl in H10.
     unfold sem_div in H10.
     unfold sem_binarith in H10.
@@ -1026,11 +1034,6 @@ Proof.
     destruct H.
     subst.
     simpl.
-    split. {
-      constructor.
-      -- assumption.
-      -- apply H.
-    }
     exists (Z.quot z z0).
     split. reflexivity. {
       unfold Int.divs.
@@ -1038,6 +1041,74 @@ Proof.
       rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
       split. reflexivity.
       assumption.
+    }
+- intros.
+  simpl in H.
+  unfold sem_sub in H.
+  simpl in H.
+  unfold sem_binarith in H.
+  simpl in H.
+  rewrite sem_cast_int in H.
+  rewrite sem_cast_int in H.
+  injection H; clear H; intros; subst.
+  inversion H2; clear H2; subst.
+  exists (z - z0)%Z.
+  split. reflexivity.
+  split. {
+    rewrite Int.sub_signed.
+    rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+    rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+    reflexivity.
+  }
+  split. apply H. apply H3.
+- intros.
+  simpl in H.
+  unfold sem_cmp in H.
+  simpl in H.
+  unfold sem_binarith in H.
+  rewrite sem_cast_int in H.
+  rewrite sem_cast_int in H.
+  simpl in H.
+  injection H; clear H; intros; subst.
+  simpl.
+  destruct (decide (int_cast (int_promote sintT ∪ int_promote sintT) z <
+                   int_cast (int_promote sintT ∪ int_promote sintT) z0)%Z).
+  + assert (z < z0)%Z. apply l.
+    eexists.
+    split. reflexivity.
+    split. {
+      unfold Int.lt.
+      destruct (Coqlib.zlt (Int.signed (Int.repr z)) (Int.signed (Int.repr z0))).
+      reflexivity.
+      rewrite Int.signed_repr in g. 2:{ apply int_typed_limits; assumption. }
+      rewrite Int.signed_repr in g. 2:{  apply int_typed_limits; assumption. }
+      lia.
+    }
+    constructor.
+    * rewrite !arch_int_coding_spec.
+      rewrite int_lower_sintT.
+      lia.
+    * rewrite !arch_int_coding_spec.
+      rewrite int_upper_sintT.
+      lia.
+  + assert (¬ (z < z0)%Z). apply n.
+    exists 0%Z.
+    split. reflexivity.
+    split. {
+      unfold Int.lt.
+      destruct (Coqlib.zlt (Int.signed (Int.repr z)) (Int.signed (Int.repr z0))). 2:{ reflexivity. }
+      rewrite Int.signed_repr in l. 2:{ apply int_typed_limits; assumption. }
+      rewrite Int.signed_repr in l. 2:{  apply int_typed_limits; assumption. }
+      lia.
+    }
+    split. {
+      rewrite arch_int_coding_spec.
+      rewrite int_lower_sintT.
+      lia.
+    } {
+      rewrite arch_int_coding_spec.
+      rewrite int_upper_sintT.
+      lia.
     }
 Qed.
 
@@ -1067,10 +1138,16 @@ induction 1; intros.
   + subst.
     inversion H3; clear H3; subst; inversion H1; clear H1; subst.
     inversion H; clear H; subst;
-    inversion H0; clear H0; subst; inversion Hop; subst; try discriminate.
+    inversion H0; clear H0; subst; try (inversion Hop; subst; discriminate).
+    assert (Hok: val_binop_ok Γ m op (intV{sintT} z) (intV{sintT} z0)). {
+      lapply (Hsafe [] _ eq_refl). 2:{ constructor. constructor. constructor. }
+      intros.
+      inversion H; clear H; subst.
+      inversion H0; clear H0; subst.
+      assumption.
+    }
     eapply binop_safe in H10; try eassumption.
-    destruct H10.
-    destruct H0 as [zr [? [? ?]]].
+    destruct H10 as [zr [? [? ?]]].
     subst.
     exists [].
     eexists; eexists; eexists.
@@ -1079,9 +1156,8 @@ induction 1; intros.
       constructor. eassumption.
     }
     split. {
-      assert (arch_int_coding A = @int_coding (arch_rank A) (@env_type_env (arch_rank A) (arch_env A))). reflexivity.
-      rewrite H1.
-      rewrite H0.
+      rewrite arch_int_coding_spec.
+      rewrite H.
       constructor.
       assumption.
     }
@@ -1439,6 +1515,85 @@ Proof.
     }
     split. reflexivity.
     assumption.
+  - exists (z - z0)%Z.
+    simpl in H13.
+    inversion H13; clear H13; subst.
+    split. {
+      simpl.
+      unfold sem_sub.
+      simpl.
+      unfold sem_binarith.
+      simpl.
+      rewrite sem_cast_int.
+      rewrite sem_cast_int.
+      rewrite Int.sub_signed.
+      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+      rewrite Int.signed_repr. 2:{ apply int_typed_limits; assumption. }
+      reflexivity.
+    }
+    split. {
+      reflexivity.
+    }
+    split. {
+      rewrite int_lower_sintT.
+      apply H.
+    }
+    rewrite int_upper_sintT.
+    apply H0.
+  - simpl.
+    destruct (decide
+                    (int_cast (int_promote sintT ∪ int_promote sintT) z <
+                     int_cast (int_promote sintT ∪ int_promote sintT) z0)%Z).
+    + exists 1%Z.
+      assert (z < z0)%Z. apply l.
+      split. {
+        unfold sem_cmp.
+        simpl.
+        unfold sem_binarith.
+        simpl.
+        rewrite sem_cast_int.
+        rewrite sem_cast_int.
+        unfold Int.lt.
+        destruct (Coqlib.zlt (Int.signed (Int.repr z)) (Int.signed (Int.repr z0))).
+        - reflexivity.
+        - rewrite Int.signed_repr in g. 2:{ apply int_typed_limits; assumption. }
+          rewrite Int.signed_repr in g. 2:{ apply int_typed_limits; assumption. }
+          lia.
+      }
+      split. reflexivity.
+      split. {
+        rewrite arch_int_coding_spec.
+        rewrite int_lower_sintT.
+        lia.
+      }
+      rewrite arch_int_coding_spec.
+      rewrite int_upper_sintT.
+      lia.
+    + assert (¬ (z < z0)%Z). apply n.
+      exists 0%Z.
+      split. {
+        unfold sem_cmp.
+        simpl.
+        unfold sem_binarith.
+        simpl.
+        rewrite sem_cast_int.
+        rewrite sem_cast_int.
+        unfold Int.lt.
+        destruct (Coqlib.zlt (Int.signed (Int.repr z)) (Int.signed (Int.repr z0))).
+        - rewrite Int.signed_repr in l. 2:{ apply int_typed_limits; assumption. }
+          rewrite Int.signed_repr in l. 2:{ apply int_typed_limits; assumption. }
+          lia.
+        - reflexivity.
+      }
+      split. reflexivity.
+      split. {
+        rewrite arch_int_coding_spec.
+        rewrite int_lower_sintT.
+        lia.
+      }
+      rewrite arch_int_coding_spec.
+      rewrite int_upper_sintT.
+      lia.
 Qed.
 
 Lemma expr_equiv_imm_safe e ė θ:
