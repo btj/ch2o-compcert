@@ -69,6 +69,10 @@ Inductive stmt_equiv: stmt K → statement → Prop :=
 | stmt_equiv_do e ė:
   expr_equiv e ė Int →
   stmt_equiv (! (cast{voidT%T} e)) (Sdo ė)
+| stmt_equiv_while e ė s ṡ:
+  expr_equiv e ė Int →
+  stmt_equiv s ṡ →
+  stmt_equiv (catch (loop (if{e} skip else throw 0 ;; catch s))) (Swhile ė ṡ)
 .
 
 Lemma int_typed_limits z:
@@ -587,7 +591,6 @@ Proof.
     }
     f_equal.
     f_equal.
-    Search ctree_map.
     rewrite ctree_map_id with (P:=λ b, pbit_locked b = false).
     - reflexivity.
     - intros.
@@ -2152,9 +2155,10 @@ inversion HstarN; subst.
     rewrite subst_snoc; reflexivity.
 Qed.
 
-Lemma stmt_soundness Q f s ṡ:
+Lemma stmt_soundness Q f n:
+  ∀ s ṡ,
   stmt_equiv s ṡ →
-  ∀ n k ḳ m ṁ ẽ,
+  ∀ k ḳ m ṁ ẽ,
   mem_equiv (mem_unlock_all m) ṁ →
   env_equiv ẽ ê (locals k) →
   ∀(Hlocals_alive: Forall (λ iτ, index_alive '{m} (iτ.1)) (locals k)),
@@ -2177,8 +2181,8 @@ Lemma stmt_soundness Q f s ṡ:
    compcertc_safe_state_n Q p n' (ExprState f (Eval (Vint (Int.repr z)) tint) (Kreturn ḳ') ẽ ṁ')) →
   compcertc_safe_state_n Q p n (Csem.State f ṡ ḳ ẽ ṁ).
 Proof.
-(* TODO: When adding support for loops, we'll need to perform well-founded induction on n here as well. *)
-induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
+apply Wf_nat.lt_wf_ind with (n:=n). clear n. intros n Hn.
+induction 1; intros k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
 - (* return *)
   intro; intros.
   inversion H3; clear H3; subst. {
@@ -2224,7 +2228,7 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
     constructor.
   }
   inversion H5; clear H5; subst; inversion H4; clear H4; subst; try intuition discriminate.
-  eapply IHstmt_equiv1 with (n:=n0) (ḳ:=Kseq ṡ2 ḳ). 4:{
+  eapply Hn with (m:=n0) (ḳ:=Kseq ṡ2 ḳ) (2:=H). lia. 4:{
     intro; intros.
     eapply H1.
     eapply rtc_l; [|eassumption].
@@ -2250,7 +2254,7 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
   inversion H9; clear H9; subst; inversion H8; clear H8; subst. 2:{
     inversion H16.
   }
-  eapply IHstmt_equiv2. 4:{
+  eapply Hn with (m:=n) (2:=H0). lia. 4:{
     intro; intros.
     eapply H5.
     eapply rtc_l; [|eassumption].
@@ -2336,7 +2340,7 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
   destruct (Coqlib.zeq z 0); simpl in H12.
   + (* z = 0 *)
     subst.
-    eapply IHstmt_equiv2. 7:{ eassumption. } 4:{
+    eapply Hn with (m:=n) (2:=H1). lia. 7:{ eassumption. } 4:{
       intro; intros.
       eapply H6.
       eapply rtc_l; [|eassumption].
@@ -2367,7 +2371,7 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
       eapply rtc_l; [|eassumption].
       constructor.
   + (* z ≠ 0 *)
-    eapply IHstmt_equiv1. 7:{ eassumption. } 4:{
+    eapply Hn with (m:=n) (2:=H0). lia. 7:{ eassumption. } 4:{
       intro; intros.
       eapply H6.
       eapply rtc_l; [|eassumption].
@@ -2449,6 +2453,217 @@ induction 1; intros n k ḳ m ṁ ẽ Hmem_equiv Henv_equiv; intros.
   }
   rewrite mem_unlock_all_mem_unlock.
   eassumption.
+- intro; intros.
+  inversion H4; clear H4; subst. {
+    right.
+    eexists; eexists.
+    right.
+    constructor.
+  }
+  inversion H5; clear H5; subst; inversion H4; clear H4; subst; try (destruct H13; discriminate).
+  eapply eval_soundness. 7:{ eassumption. } 5:{
+    intro; intros.
+    apply H1.
+    eapply rtc_l. {
+      constructor.
+    }
+    eapply rtc_l. {
+      constructor.
+    }
+    eapply rtc_l. {
+      constructor.
+    }
+    eapply rtc_l. {
+      eapply cstep_expr with (E:=CIfE skip (throw 0)).
+    }
+    apply H4.
+  } assumption. assumption. assumption. assumption.
+  intros.
+  inversion H7; clear H7; subst. 2:{
+    edestruct H5.
+    + eapply rtc_l.
+      * apply cstep_expr_if_indet.
+        intro.
+        inversion H7.
+      * apply rtc_refl.
+    + inversion H7.
+    + destruct H7.
+      inversion H7.
+  }
+  intro; intros.
+  inversion H7; clear H7; subst. {
+    right.
+    destruct (classic (z = 0)).
+    - subst.
+      eexists; eexists.
+      right.
+      apply step_while_false.
+      reflexivity.
+    - eexists; eexists.
+      right.
+      apply step_while_true.
+      unfold bool_val.
+      simpl.
+      rewrite Int.eq_signed.
+      destruct (Coqlib.zeq (Int.signed (Int.repr z))).
+      + rewrite Int.signed_repr in e0. 2:{ apply int_typed_limits; assumption. }
+        rewrite Int.signed_zero in e0.
+        lia.
+      + reflexivity.
+  }
+  inversion H9; clear H9; intros; inversion H7; clear H7; subst; try discriminate. {
+    inversion H19; clear H19; subst; try discriminate.
+  } {
+    inversion H19; clear H19; subst; try discriminate.
+    subst.
+    inversion H18.
+  } {
+    inversion H19; clear H19; subst; try discriminate.
+    subst.
+    inversion H18.
+  } {
+    inversion H18; clear H18; subst; try discriminate.
+    subst.
+    elim H19.
+    constructor.
+  }
+  + (* false *)
+    unfold bool_val in H21.
+    simpl in H21.
+    rewrite Int.eq_signed in H21.
+    destruct (Coqlib.zeq (Int.signed (Int.repr z))
+               (Int.signed Int.zero)); try discriminate.
+    rewrite Int.signed_repr in e0. 2:{ apply int_typed_limits; assumption. }
+    rewrite Int.signed_zero in e0. subst.
+    eapply H2 with (m':=mem_unlock Ω m'); try eassumption. lia. {
+      rewrite mem_unlock_memenv_of.
+      assumption.
+    } 2:{
+      rewrite mem_unlock_all_mem_unlock.
+      assumption.
+    }
+    intro; intros.
+    apply H5.
+    eapply rtc_l. {
+      apply cstep_expr_if_false. { constructor. }
+      constructor.
+    }
+    eapply rtc_l. {
+      constructor.
+    }
+    eapply rtc_l. {
+      constructor.
+      discriminate.
+    }
+    eapply rtc_l. {
+      constructor.
+      discriminate.
+    }
+    simpl.
+    eapply rtc_l. {
+      constructor.
+      discriminate.
+    }
+    eapply rtc_l. {
+      constructor.
+    }
+    apply H7.
+  + (* true *)
+    eapply Hn with (m:=n). lia. eassumption. 4:{
+      intro; intros.
+      apply H5.
+      eapply rtc_l. {
+        apply cstep_expr_if_true. { constructor. }
+        intro.
+        inversion H9; clear H9; subst.
+        discriminate.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply H7.
+    } {
+      rewrite mem_unlock_all_mem_unlock.
+      eassumption.
+    } eassumption. {
+      rewrite mem_unlock_memenv_of.
+      eassumption.
+    } 3:{ eassumption. } 2:{
+      intros.
+      intro; intros.
+      eapply H3; try eassumption. lia.
+      intro; intros.
+      apply H14.
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      apply H16.
+    }
+    intros.
+    intro; intros.
+    inversion H13; clear H13; subst. {
+      right.
+      eexists; eexists.
+      right.
+      constructor.
+      tauto.
+    }
+    inversion H14; clear H14; subst; inversion H13; clear H13; subst. 2:{
+      inversion H22.
+    }
+    eapply Hn with (m:=n1). lia. {
+      eapply stmt_equiv_while; eassumption.
+    } 4:{
+      intro; intros.
+      inversion H13; clear H13; subst. {
+        right.
+        eexists.
+        constructor.
+      }
+      inversion H14; clear H14; subst. {
+        revert H18 H16. destruct E; try discriminate.
+      } 2:{
+        inversion H22.
+      }
+      eapply H9; try eassumption.
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply rtc_l. {
+        constructor.
+      }
+      eapply H16.
+    } eassumption. eassumption. eassumption. 3:{ 
+      eassumption.
+    } 2:{
+      intros.
+      eapply H3; try eassumption.
+      lia.
+    }
+    intros.
+    eapply H2; try eassumption.
+    lia.
 Qed.
 
 End Locals.
