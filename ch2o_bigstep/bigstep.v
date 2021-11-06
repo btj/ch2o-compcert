@@ -1,6 +1,17 @@
 Require Export ch2o.core_c.statements.
 Require Export stores.
 
+Inductive binop_ok `{Env K}: binop → Z → Z → Prop :=
+| div_ok z1 z2:
+  z2 ≠ 0%Z → binop_ok (ArithOp DivOp) z1 z2
+.
+
+Definition binop_value `{Env K} (op:binop)(z1 z2: Z): Z :=
+  match op with
+    ArithOp DivOp => z1 ÷ z2
+  | _ => 0
+  end.
+
 Inductive eval `{Env K}: store -> expr K -> Z -> Prop :=
 | eval_lit st z:
   int_typed z sintT ->
@@ -8,12 +19,12 @@ Inductive eval `{Env K}: store -> expr K -> Z -> Prop :=
 | eval_load_var st i z:
   st !! i = Some (Some z) ->
   eval st (load (var i)) z
-| eval_div st e1 z1 e2 z2:
+| eval_binop st e1 z1 e2 z2 op:
   eval st e1 z1 →
   eval st e2 z2 →
-  z2 ≠ 0 →
-  int_typed (z1 ÷ z2) sintT →
-  eval st (e1 / e2) (z1 ÷ z2)
+  binop_ok op z1 z2 →
+  int_typed (binop_value op z1 z2) sintT →
+  eval st (e1 .{ op } e2) (binop_value op z1 z2)
 .
 
 Lemma eval_typed `{Env K} st e z:

@@ -20,6 +20,25 @@ reflexivity.
 reflexivity.
 Qed.
 
+Lemma binop_ok_sound op z1 z2:
+  binop_ok (ArithOp op) z1 z2 →
+  int_typed (binop_value (ArithOp op) z1 z2) sintT →
+  int_pre_arithop_ok op z1 z2 sintT.
+Proof.
+  intros.
+  inversion H; clear H; subst; simpl.
+  - split; assumption.
+Qed.
+
+Lemma binop_value_sound op z1 z2:
+  binop_ok (ArithOp op) z1 z2 →
+  int_pre_arithop op z1 z2 sintT = binop_value (ArithOp op) z1 z2.
+Proof.
+  intros.
+  inversion H.
+  - reflexivity.
+Qed.
+
 Lemma eval_sound st e z:
   eval st e z →
   (assert_stack st ⊆{Γ,δ} e ⇓ inr (intV{sintT} z))%A.
@@ -27,12 +46,13 @@ Proof.
 induction 1.
 - apply assert_int_typed_eval; assumption.
 - apply assert_stack_load with (1:=H).
-- eapply assert_eval_int_arithop'; try eassumption; try reflexivity.
+- destruct op; try (inversion H1; fail).
+  eapply assert_eval_int_arithop'; try eassumption; try reflexivity.
   + rewrite int_promote_int.
     rewrite sintT_union.
     reflexivity.
-  + simpl.
-    split; assumption.
+  + apply binop_ok_sound with (1:=H1); assumption.
+  + apply binop_value_sound with (1:=H1).
 Qed.
 
 Definition R (st: store) (O: outcome): val K -> assert K :=
